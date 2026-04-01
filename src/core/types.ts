@@ -64,6 +64,33 @@ export interface SectionCue {
   label: 'intro' | 'pulse' | 'lift' | 'peak' | 'release';
 }
 
+export type JourneySegmentLabel = 'approach' | 'cruise' | 'lift' | 'orbit' | 'release';
+
+export interface JourneyCue {
+  index: number;
+  startTimeSeconds: number;
+  endTimeSeconds: number;
+  energy: number;
+  density: number;
+  onsetActivity: number;
+  dynamicContrast: number;
+  travelSpeed: number;
+  complexity: number;
+  label: JourneySegmentLabel;
+}
+
+export interface JourneyFrame {
+  timeSeconds: number;
+  progress: number;
+  energy: number;
+  density: number;
+  onsetActivity: number;
+  dynamicContrast: number;
+  travelSpeed: number;
+  complexity: number;
+  segment: JourneyCue | null;
+}
+
 export interface PlaybackFrame {
   timeSeconds: number;
   durationSeconds: number;
@@ -80,6 +107,7 @@ export interface PlaybackFrame {
 export interface AnalysisSnapshot {
   document: NormalizedMidiDocument;
   sectionCues: SectionCue[];
+  journeyCues: JourneyCue[];
   maxPolyphony: number;
   averageVelocity: number;
   noteDensityPeak: number;
@@ -134,4 +162,25 @@ export interface TransportController {
 export interface SeedConfig {
   displaySeed: string;
   normalizedSeed: number;
+}
+
+export interface CameraJourneyFrame {
+  position: [x: number, y: number, z: number];
+  target: [x: number, y: number, z: number];
+  rollRadians: number;
+  fieldOfViewDegrees: number;
+  travelSpeed: number;
+  complexity: number;
+  segmentLabel: JourneySegmentLabel;
+}
+
+export interface GroundPlaneFrame {
+  gridIntensity: number;
+  gridScale: number;
+  terrainAmplitude: number;
+  terrainFrequency: number;
+  terrainScroll: number;
+  sphereAnchorVisible: boolean;
+  sphereAnchorRadius: number;
+  accentColorHsl: [h: number, s: number, l: number];
 }

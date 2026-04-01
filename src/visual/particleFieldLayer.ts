@@ -1,5 +1,5 @@
-import type { NoteEvent, PlaybackFrame } from '../core/types';
-import { createDeterministicRandom, hashValue } from './seed';
+import type { NoteEvent, PlaybackFrame } from '../core/types.ts';
+import { createDeterministicRandom, hashValue } from './seed.ts';
 import type {
   AmbientParticle,
   BackgroundState,
@@ -7,7 +7,7 @@ import type {
   VisualLayer,
   VisualLayerContext,
   VisualLayerRenderState,
-} from './types';
+} from './types.ts';
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));

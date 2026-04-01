@@ -1,4 +1,5 @@
-import type { AnalysisSnapshot, NormalizedMidiDocument, NoteEvent, PlaybackFrame, SectionCue } from '../core/types';
+import type { AnalysisSnapshot, NormalizedMidiDocument, NoteEvent, PlaybackFrame, SectionCue } from '../core/types.ts';
+import { createJourneyCuesFromAnalysis } from './journeyAnalysis.ts';
 
 const WINDOW_SECONDS = 2;
 const RECENT_ONSET_WINDOW = 0.35;
@@ -89,12 +90,17 @@ export const createAnalysisSnapshot = (document: NormalizedMidiDocument): Analys
   const maxPolyphony = document.notes.length > 0 ? estimateMaxPolyphony(document.notes) : 0;
   const noteDensityPeak = Math.max(0, ...sectionCues.map((cue) => cue.density));
 
-  return {
+  const baseSnapshot = {
     document,
     sectionCues,
     maxPolyphony,
     averageVelocity,
     noteDensityPeak,
+  };
+
+  return {
+    ...baseSnapshot,
+    journeyCues: createJourneyCuesFromAnalysis(baseSnapshot),
   };
 };
 

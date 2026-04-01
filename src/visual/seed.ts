@@ -1,4 +1,4 @@
-import type { SeedConfig } from '../core/types';
+import type { SeedConfig } from '../core/types.ts';
 
 const hashString = (value: string): number => {
   let hash = 0x811c9dc5;

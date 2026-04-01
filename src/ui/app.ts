@@ -80,7 +80,7 @@ export const mountMidiLab = (root: HTMLElement): void => {
               <span class="field-label"><span>Seed override</span><span data-seed-display>auto</span></span>
               <input data-seed-input type="text" placeholder="Leave blank to derive from MIDI content" spellcheck="false" />
             </label>
-            <p class="data-flow"><strong>Data flow</strong><br />MIDI file -> normalized document -> analysis snapshot -> playback frame -> visual mapping -> Three renderer</p>
+            <p class="data-flow"><strong>Data flow</strong><br />MIDI file -> normalized document -> analysis snapshot + journey cues -> playback frame -> visual mapping -> Three renderer</p>
           </section>
 
           <section class="stack">
@@ -123,6 +123,7 @@ export const mountMidiLab = (root: HTMLElement): void => {
               <div class="metric-card"><dt>Energy</dt><dd data-energy>0%</dd></div>
               <div class="metric-card"><dt>Dominant pitch</dt><dd data-pitch>--</dd></div>
               <div class="metric-card"><dt>Current cue</dt><dd data-cue-label>idle</dd></div>
+              <div class="metric-card"><dt>Journey</dt><dd data-journey-label>approach</dd></div>
               <div class="metric-card"><dt>Audio</dt><dd data-audio-status>idle</dd></div>
               <div class="metric-card"><dt>Instruments</dt><dd data-audio-instruments>0</dd></div>
             </dl>
@@ -143,6 +144,7 @@ export const mountMidiLab = (root: HTMLElement): void => {
             <div class="canvas-overlay">
               <div class="pill" data-overlay-seed>seed: auto</div>
               <div class="pill" data-overlay-cue>cue: idle</div>
+              <div class="pill" data-overlay-journey>journey: approach</div>
               <div class="pill" data-overlay-notes>notes: 0</div>
             </div>
           </div>
@@ -173,6 +175,7 @@ export const mountMidiLab = (root: HTMLElement): void => {
   const seedDisplay = root.querySelector<HTMLElement>('[data-seed-display]');
   const overlaySeed = root.querySelector<HTMLElement>('[data-overlay-seed]');
   const overlayCue = root.querySelector<HTMLElement>('[data-overlay-cue]');
+  const overlayJourney = root.querySelector<HTMLElement>('[data-overlay-journey]');
   const overlayNotes = root.querySelector<HTMLElement>('[data-overlay-notes]');
   const trackMetric = root.querySelector<HTMLElement>('[data-tracks]');
   const noteMetric = root.querySelector<HTMLElement>('[data-notes]');
@@ -182,6 +185,7 @@ export const mountMidiLab = (root: HTMLElement): void => {
   const energyMetric = root.querySelector<HTMLElement>('[data-energy]');
   const pitchMetric = root.querySelector<HTMLElement>('[data-pitch]');
   const cueLabelMetric = root.querySelector<HTMLElement>('[data-cue-label]');
+  const journeyLabelMetric = root.querySelector<HTMLElement>('[data-journey-label]');
   const audioStatusMetric = root.querySelector<HTMLElement>('[data-audio-status]');
   const audioInstrumentsMetric = root.querySelector<HTMLElement>('[data-audio-instruments]');
 
@@ -208,6 +212,7 @@ export const mountMidiLab = (root: HTMLElement): void => {
     !seedDisplay ||
     !overlaySeed ||
     !overlayCue ||
+    !overlayJourney ||
     !overlayNotes ||
     !trackMetric ||
     !noteMetric ||
@@ -217,6 +222,7 @@ export const mountMidiLab = (root: HTMLElement): void => {
     !energyMetric ||
     !pitchMetric ||
     !cueLabelMetric ||
+    !journeyLabelMetric ||
     !audioStatusMetric ||
     !audioInstrumentsMetric
   ) {
@@ -287,8 +293,10 @@ export const mountMidiLab = (root: HTMLElement): void => {
     energyMetric.textContent = `${Math.round(playbackFrame.velocityEnergy * 100)}%`;
     pitchMetric.textContent = playbackFrame.dominantPitch === null ? '--' : String(playbackFrame.dominantPitch);
     cueLabelMetric.textContent = describeCue(playbackFrame);
+    journeyLabelMetric.textContent = sceneFrame.camera.segmentLabel;
     overlaySeed.textContent = `seed: ${state.sceneProfile.seed.displaySeed}`;
     overlayCue.textContent = `cue: ${describeCue(playbackFrame)}`;
+    overlayJourney.textContent = `journey: ${sceneFrame.camera.segmentLabel}`;
     overlayNotes.textContent = `notes: ${playbackFrame.activeNotes.length} active / ${playbackFrame.recentOnsets.length} recent`;
     seedDisplay.textContent = state.sceneProfile.seed.displaySeed;
   };
@@ -312,7 +320,7 @@ export const mountMidiLab = (root: HTMLElement): void => {
       loadedState = state;
       fileName.textContent = file.name;
       helperCopy.textContent =
-        'Analysis is precomputed once. Audio instruments prepare in parallel, then transport time drives both the renderer and the audio scheduler.';
+        'Analysis is precomputed once. Audio instruments prepare in parallel, then transport time drives particles, the camera journey, terrain, and audio together.';
       void audioController.prepare(document).catch((audioError: unknown) => {
         const message = audioError instanceof Error ? audioError.message : 'Audio preparation failed.';
         setError(message);

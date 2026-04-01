@@ -1,4 +1,11 @@
-import type { AnalysisSnapshot, PlaybackFrame, SeedConfig } from '../core/types';
+import type {
+  AnalysisSnapshot,
+  CameraJourneyFrame,
+  GroundPlaneFrame,
+  JourneyFrame,
+  PlaybackFrame,
+  SeedConfig,
+} from '../core/types.ts';
 
 export interface AmbientParticle {
   position: [x: number, y: number, z: number];
@@ -30,6 +37,8 @@ export interface VisualSceneFrame {
   ambientParticles: AmbientParticle[];
   particles: ParticleInstance[];
   background: BackgroundState;
+  camera: CameraJourneyFrame;
+  ground: GroundPlaneFrame;
 }
 
 export interface VisualLayer {
@@ -38,11 +47,22 @@ export interface VisualLayer {
 }
 
 export interface VisualSceneProfile {
+  analysis: AnalysisSnapshot;
   seed: SeedConfig;
   layers: VisualLayer[];
+  cameraDirector: VisualCameraDirector;
+  groundProfile: VisualGroundProfile;
 }
 
 export interface VisualLayerContext {
   analysis: AnalysisSnapshot;
   seed: SeedConfig;
+}
+
+export interface VisualCameraDirector {
+  sample(frame: PlaybackFrame, journey: JourneyFrame): CameraJourneyFrame;
+}
+
+export interface VisualGroundProfile {
+  sample(frame: PlaybackFrame, journey: JourneyFrame): GroundPlaneFrame;
 }
