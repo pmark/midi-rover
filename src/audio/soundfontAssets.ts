@@ -1,4 +1,4 @@
-const CACHE_NAME = 'midi-signal-form-soundfonts-v1';
+const CACHE_NAME = 'midi-rover-soundfonts-v1';
 const primedSoundfontCache = new Map<string, Promise<{ sourceUrl: string; cacheHit: boolean }>>();
 
 export const DEFAULT_SOUNDFONT_BASE_URL = 'https://gleitz.github.io/midi-js-soundfonts';

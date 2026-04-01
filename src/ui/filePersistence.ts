@@ -1,4 +1,4 @@
-const DB_NAME = 'midi-signal-form-ui';
+const DB_NAME = 'midi-rover-ui';
 const DB_VERSION = 1;
 const STORE_NAME = 'persisted-midi';
 const RECORD_KEY = 'last-loaded-midi';

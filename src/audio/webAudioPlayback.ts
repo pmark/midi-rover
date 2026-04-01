@@ -33,7 +33,7 @@ type ScheduledVoice = {
   stop: (when?: number) => void;
 };
 
-const STORAGE_KEY = 'midi-signal-form-master-volume';
+const STORAGE_KEY = 'midi-rover-master-volume';
 const SCHEDULE_AHEAD_SECONDS = 0.2;
 const SCHEDULE_INTERVAL_MS = 50;
 const PLAYBACK_OFFSET_SECONDS = 0.05;
