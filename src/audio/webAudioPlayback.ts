@@ -1,11 +1,11 @@
-import * as Soundfont from 'soundfont-player';
 import type {
   AudioPlaybackController,
   AudioPlaybackListener,
   AudioPlaybackState,
   NormalizedMidiDocument,
   NoteEvent,
-} from '../core/types';
+} from '../core/types.ts';
+import { loadBrowserSoundfont } from './browserSoundfont.ts';
 import { createFallbackSynthPlayer } from './fallbackSynth';
 import { fallbackInstrumentName, getNoteInstrumentName } from './gmMapping';
 import { primeSoundfontAsset } from './soundfontAssets';
@@ -123,7 +123,8 @@ export const createAudioPlaybackController = (): AudioPlaybackController => {
 
     try {
       const asset = await primeSoundfontAsset(instrumentName);
-      const player = (await Soundfont.instrument(audioContext, asset.sourceUrl as never, {
+      const soundfont = await loadBrowserSoundfont();
+      const player = (await soundfont.instrument(audioContext, asset.sourceUrl, {
         destination: masterGain,
       })) as unknown as SoundfontInstrument;
       instruments.set(instrumentName, player);
