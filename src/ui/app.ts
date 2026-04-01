@@ -6,7 +6,7 @@ import type {
   TransportState,
 } from '../core/types';
 import { createTransportController } from '../core/transport';
-import { createAnalysisSnapshot, samplePlaybackFrame } from '../analysis/playbackAnalysis';
+import { createAnalysisSnapshot, createPlaceholderMidiDocument, samplePlaybackFrame } from '../analysis/playbackAnalysis';
 import { parseMidiFile } from '../analysis/midiParser';
 import { createAudioPlaybackController } from '../audio/webAudioPlayback';
 import { ParticleSceneRenderer } from '../rendering/three/particleSceneRenderer';
@@ -16,6 +16,7 @@ import { createVisualSceneProfile, sampleVisualScene } from '../visual/sceneProf
 import type { VisualSceneProfile } from '../visual/types';
 
 type LoadedState = {
+  documentLabel: string;
   analysis: AnalysisSnapshot;
   transport: TransportController;
   renderer: ParticleSceneRenderer;
@@ -299,6 +300,46 @@ export const mountMidiLab = (root: HTMLElement): void => {
     overlayJourney.textContent = `journey: ${sceneFrame.camera.segmentLabel}`;
     overlayNotes.textContent = `notes: ${playbackFrame.activeNotes.length} active / ${playbackFrame.recentOnsets.length} recent`;
     seedDisplay.textContent = state.sceneProfile.seed.displaySeed;
+    fileName.textContent = state.documentLabel;
+  };
+
+  const loadScene = ({
+    analysis,
+    documentLabel,
+    seedOverride = seedInput.value,
+  }: {
+    analysis: AnalysisSnapshot;
+    documentLabel: string;
+    seedOverride?: string;
+  }): LoadedState => {
+    destroyLoadedState();
+    setError(null);
+
+    const transport = createTransportController(analysis.document.durationSeconds);
+    const renderer = new ParticleSceneRenderer(canvasHost);
+    const sceneProfile = createVisualSceneProfile(analysis, createSeedConfig(analysis.document.sourceHash, seedOverride));
+    const state: LoadedState = {
+      documentLabel,
+      analysis,
+      transport,
+      renderer,
+      seedOverride,
+      sceneProfile,
+    };
+
+    unsubscribeTransport = transport.subscribe((transportState) => renderFrame(state, transportState));
+    loadedState = state;
+    renderFrame(state, transport.getState());
+    return state;
+  };
+
+  const loadDefaultScene = (): void => {
+    loadScene({
+      analysis: createAnalysisSnapshot(createPlaceholderMidiDocument()),
+      documentLabel: 'Default scene',
+    });
+    helperCopy.textContent =
+      'Default scene loaded. Load a MIDI file to replace it with analysis-driven motion; the same MIDI content and seed produce the same visual field.';
   };
 
   const loadMidiFile = async (file: File): Promise<void> => {
@@ -310,15 +351,10 @@ export const mountMidiLab = (root: HTMLElement): void => {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const document = parseMidiFile(bytes);
       const analysis = createAnalysisSnapshot(document);
-      const transport = createTransportController(document.durationSeconds);
-      const renderer = new ParticleSceneRenderer(canvasHost);
-      const seedOverride = seedInput.value;
-      const sceneProfile = createVisualSceneProfile(analysis, createSeedConfig(document.sourceHash, seedOverride));
-      const state: LoadedState = { analysis, transport, renderer, seedOverride, sceneProfile };
-
-      unsubscribeTransport = transport.subscribe((transportState) => renderFrame(state, transportState));
-      loadedState = state;
-      fileName.textContent = file.name;
+      loadScene({
+        analysis,
+        documentLabel: file.name,
+      });
       helperCopy.textContent =
         'Analysis is precomputed once. Audio instruments prepare in parallel, then transport time drives particles, the camera journey, terrain, and audio together.';
       void audioController.prepare(document).catch((audioError: unknown) => {
@@ -330,11 +366,11 @@ export const mountMidiLab = (root: HTMLElement): void => {
           persistenceError instanceof Error ? persistenceError.message : 'MIDI persistence failed.';
         helperCopy.textContent = `Loaded successfully, but auto-restore could not be saved: ${message}`;
       });
-      renderFrame(state, transport.getState());
     } catch (error) {
       destroyLoadedState();
       const message = error instanceof Error ? error.message : 'Unknown MIDI parsing error.';
       setError(message);
+      loadDefaultScene();
       helperCopy.textContent = 'The file could not be parsed. Try a different MIDI file.';
       fileName.textContent = file.name;
     }
@@ -485,6 +521,8 @@ export const mountMidiLab = (root: HTMLElement): void => {
 
     renderFrame(loadedState, loadedState.transport.getState());
   });
+
+  loadDefaultScene();
 
   void (async () => {
     try {

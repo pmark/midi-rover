@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "midi-file": "^1.2.4",
+    "simplex-noise": "^4.0.3",
     "soundfont-player": "^0.12.0",
     "three": "^0.183.2"
   }

@@ -3,6 +3,7 @@ import { createJourneyCuesFromAnalysis } from './journeyAnalysis.ts';
 
 const WINDOW_SECONDS = 2;
 const RECENT_ONSET_WINDOW = 0.35;
+const PLACEHOLDER_SCENE_DURATION_SECONDS = 12;
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
@@ -103,6 +104,20 @@ export const createAnalysisSnapshot = (document: NormalizedMidiDocument): Analys
     journeyCues: createJourneyCuesFromAnalysis(baseSnapshot),
   };
 };
+
+export const createPlaceholderMidiDocument = (): NormalizedMidiDocument => ({
+  sourceHash: 'default-scene',
+  format: 1,
+  ticksPerBeat: 480,
+  secondsPerTick: 1 / 960,
+  durationSeconds: PLACEHOLDER_SCENE_DURATION_SECONDS,
+  trackCount: 1,
+  tracks: [{ index: 0, name: 'Default scene', programNumbers: [] }],
+  tempoEvents: [{ tick: 0, timeSeconds: 0, microsecondsPerBeat: 500000, bpm: 120 }],
+  meterEvents: [{ tick: 0, timeSeconds: 0, numerator: 4, denominator: 4 }],
+  programChanges: [],
+  notes: [],
+});
 
 const estimateMaxPolyphony = (notes: NoteEvent[]): number => {
   const events = notes.flatMap((note) => [

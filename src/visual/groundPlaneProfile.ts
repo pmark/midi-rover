@@ -1,5 +1,6 @@
-import type { GroundPlaneFrame, JourneyFrame, PlaybackFrame } from '../core/types.ts';
+import type { CameraJourneyFrame, GroundPlaneFrame, JourneyFrame, PlaybackFrame } from '../core/types.ts';
 import { createDeterministicRandom } from './seed.ts';
+import { SynthwaveTerrain } from './synthwaveTerrain.ts';
 import type { VisualGroundProfile, VisualLayerContext } from './types.ts';
 
 const clamp = (value: number, min: number, max: number): number =>
@@ -11,6 +12,7 @@ export class GroundPlaneProfile implements VisualGroundProfile {
   private readonly sphereAnchorRadius: number;
   private readonly sphereAnchorVisible: boolean;
   private readonly baseHue: number;
+  private readonly terrain: SynthwaveTerrain;
 
   public constructor(context: VisualLayerContext) {
     const random = createDeterministicRandom(context.seed.normalizedSeed ^ 0xa5f1523d);
@@ -19,12 +21,21 @@ export class GroundPlaneProfile implements VisualGroundProfile {
     this.sphereAnchorRadius = 18 + random() * 12;
     this.sphereAnchorVisible = random() > 0.22;
     this.baseHue = ((context.seed.normalizedSeed % 360) / 360 + 0.1) % 1;
+    this.terrain = new SynthwaveTerrain(context.seed.normalizedSeed);
   }
 
-  public sample(frame: PlaybackFrame, journey: JourneyFrame): GroundPlaneFrame {
+  public sample(frame: PlaybackFrame, journey: JourneyFrame, camera: CameraJourneyFrame): GroundPlaneFrame {
     const gridIntensity = clamp(0.42 + (1 - journey.complexity) * 0.18 + frame.velocityEnergy * 0.12, 0.4, 0.82);
     const terrainAmplitude = clamp(1.9 + journey.energy * 4.2 + journey.dynamicContrast * 1.6, 1.8, 6.4);
     const terrainScroll = frame.timeSeconds * (0.035 + journey.travelSpeed * 0.09);
+    const terrainOriginZ = camera.position[2] - 34;
+    const terrainHeights = this.terrain.sample({
+      amplitude: terrainAmplitude,
+      frequency: this.terrainFrequency,
+      worldOffsetZ: terrainOriginZ,
+      travelSpeed: journey.travelSpeed,
+      complexity: journey.complexity,
+    });
 
     return {
       gridIntensity,
@@ -32,6 +43,8 @@ export class GroundPlaneProfile implements VisualGroundProfile {
       terrainAmplitude,
       terrainFrequency: this.terrainFrequency,
       terrainScroll,
+      terrainOriginZ,
+      terrainHeights,
       sphereAnchorVisible: this.sphereAnchorVisible,
       sphereAnchorRadius: this.sphereAnchorRadius,
       accentColorHsl: [

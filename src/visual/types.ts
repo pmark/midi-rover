@@ -64,5 +64,5 @@ export interface VisualCameraDirector {
 }
 
 export interface VisualGroundProfile {
-  sample(frame: PlaybackFrame, journey: JourneyFrame): GroundPlaneFrame;
+  sample(frame: PlaybackFrame, journey: JourneyFrame, camera: CameraJourneyFrame): GroundPlaneFrame;
 }

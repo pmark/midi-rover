@@ -21,6 +21,7 @@ export const createVisualSceneProfile = (analysis: AnalysisSnapshot, seed: SeedC
 export const sampleVisualScene = (profile: VisualSceneProfile, frame: PlaybackFrame): VisualSceneFrame => {
   const layerStates = profile.layers.map((layer) => layer.sample(frame));
   const journey = sampleJourneyFrame(profile.analysis, frame.timeSeconds);
+  const camera = profile.cameraDirector.sample(frame, journey);
   const background =
     layerStates.at(-1)?.background ??
     defaultBackground;
@@ -29,7 +30,7 @@ export const sampleVisualScene = (profile: VisualSceneProfile, frame: PlaybackFr
     ambientParticles: layerStates.flatMap((layer) => layer.ambientParticles),
     particles: layerStates.flatMap((layer) => layer.particles),
     background,
-    camera: profile.cameraDirector.sample(frame, journey),
-    ground: profile.groundProfile.sample(frame, journey),
+    camera,
+    ground: profile.groundProfile.sample(frame, journey, camera),
   };
 };

@@ -37,12 +37,12 @@ const createAmbientField = (seed: number, count = 180): AmbientParticle[] => {
     ambient.push({
       position: [
         (random() * 2 - 1) * 11,
-        (random() * 2 - 1) * 6,
-        (random() * 2 - 1) * 6,
+        2 + (random() * 2 - 1) * 4.5,
+        -14 + random() * 8,
       ],
-      colorHsl: [0.47 + random() * 0.12, 0.55 + random() * 0.2, 0.4 + random() * 0.28],
-      alpha: 0.18 + random() * 0.32,
-      size: 0.03 + random() * 0.07,
+      colorHsl: [0.84 + random() * 0.05, 0.72 + random() * 0.18, 0.54 + random() * 0.18],
+      alpha: 0.06 + random() * 0.16,
+      size: 0.015 + random() * 0.045,
     });
   }
 
@@ -53,6 +53,30 @@ const createLaneMap = (seed: number): number[] => {
   const random = createDeterministicRandom(seed ^ 0x9e3779b9);
   return Array.from({ length: 12 }, (_, index) => (index - 5.5) * 1.15 + (random() * 2 - 1) * 0.28);
 };
+
+const createIdleParticles = (
+  frame: PlaybackFrame,
+  laneMap: number[],
+  baseHue: number,
+): ParticleInstance[] =>
+  laneMap.map((lane, index) => {
+    const phase = frame.timeSeconds * 0.42 + index * 0.73;
+    const pulse = 0.5 + (Math.sin(phase) + 1) * 0.25;
+    return {
+      position: [
+        lane * 0.8,
+        -2.8 + index * 0.42 + Math.sin(phase * 1.2) * 0.18,
+        Math.cos(phase * 0.9) * 0.55,
+      ],
+      colorHsl: [
+        (baseHue + index * 0.018) % 1,
+        0.74,
+        0.46 + pulse * 0.12,
+      ],
+      alpha: 0.32 + pulse * 0.18,
+      size: 0.12 + pulse * 0.06,
+    };
+  });
 
 const noteToParticle = (
   note: NoteEvent,
@@ -133,18 +157,20 @@ export class ParticleFieldLayer implements VisualLayer {
 
   public sample(frame: PlaybackFrame): VisualLayerRenderState {
     const sectionEnergy = frame.sectionCue?.energy ?? 0;
+    const hasMusicalNotes = this.context.analysis.document.notes.length > 0;
     const noteParticles = frame.activeNotes.slice(-72).map((note) =>
       noteToParticle(note, frame, this.laneMap, this.baseHue, sectionEnergy),
     );
     const burstParticles = frame.recentOnsets.slice(-14).flatMap((note) =>
       createBurstParticles(note, frame, this.laneMap, this.baseHue),
     );
+    const idleParticles = hasMusicalNotes ? [] : createIdleParticles(frame, this.laneMap, this.baseHue);
     const background = this.sampleBackground(frame);
 
     return {
       id: this.id,
-      ambientParticles: this.context.analysis.document.notes.length > 0 ? this.ambientParticles : [],
-      particles: [...noteParticles, ...burstParticles],
+      ambientParticles: this.ambientParticles,
+      particles: [...idleParticles, ...noteParticles, ...burstParticles],
       background,
     };
   }
@@ -166,29 +192,29 @@ export class ParticleFieldLayer implements VisualLayer {
     const sectionProgress = clamp((frame.timeSeconds - currentSection.startTimeSeconds) / sectionDuration, 0, 1);
     const easedProgress = smoothStep(sectionProgress);
 
-    const currentHue = (this.baseHue + currentSection.energy * 0.025 + currentSection.density * 0.018) % 1;
-    const nextHue = (this.baseHue + nextSection.energy * 0.025 + nextSection.density * 0.018) % 1;
-    const currentSaturation = clamp(0.38 + this.averageVelocity * 0.12 + currentSection.density * 0.08, 0.34, 0.62);
-    const nextSaturation = clamp(0.38 + this.averageVelocity * 0.12 + nextSection.density * 0.08, 0.34, 0.62);
-    const currentLightness = clamp(0.07 + currentSection.energy * 0.045 + currentSection.density * 0.03, 0.06, 0.16);
-    const nextLightness = clamp(0.07 + nextSection.energy * 0.045 + nextSection.density * 0.03, 0.06, 0.16);
-    const currentFogStrength = clamp(0.2 + currentSection.energy * 0.42 + currentSection.density * 0.12, 0.16, 0.82);
-    const nextFogStrength = clamp(0.2 + nextSection.energy * 0.42 + nextSection.density * 0.12, 0.16, 0.82);
+    const currentHue = (0.9 + currentSection.energy * 0.015 + currentSection.density * 0.01) % 1;
+    const nextHue = (0.9 + nextSection.energy * 0.015 + nextSection.density * 0.01) % 1;
+    const currentSaturation = clamp(0.74 + this.averageVelocity * 0.05 + currentSection.density * 0.05, 0.72, 0.9);
+    const nextSaturation = clamp(0.74 + this.averageVelocity * 0.05 + nextSection.density * 0.05, 0.72, 0.9);
+    const currentLightness = clamp(0.18 + currentSection.energy * 0.05 + currentSection.density * 0.02, 0.16, 0.28);
+    const nextLightness = clamp(0.18 + nextSection.energy * 0.05 + nextSection.density * 0.02, 0.16, 0.28);
+    const currentFogStrength = clamp(0.08 + currentSection.energy * 0.08 + currentSection.density * 0.04, 0.06, 0.22);
+    const nextFogStrength = clamp(0.08 + nextSection.energy * 0.08 + nextSection.density * 0.04, 0.06, 0.22);
 
     return {
       colorHsl: [
         lerpHue(currentHue, nextHue, easedProgress),
         lerp(currentSaturation, nextSaturation, easedProgress),
         clamp(
-          lerp(currentLightness, nextLightness, easedProgress) + frame.velocityEnergy * 0.012,
-          0.06,
-          0.18,
+          lerp(currentLightness, nextLightness, easedProgress) + frame.velocityEnergy * 0.015,
+          0.16,
+          0.3,
         ),
       ],
       fogStrength: clamp(
-        lerp(currentFogStrength, nextFogStrength, easedProgress) + frame.polyphonyNormalized * 0.02,
-        0.16,
-        0.88,
+        lerp(currentFogStrength, nextFogStrength, easedProgress) + frame.polyphonyNormalized * 0.01,
+        0.06,
+        0.24,
       ),
     };
   }

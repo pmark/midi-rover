@@ -27,5 +27,5 @@ The current scene profile contains one concrete `ParticleFieldLayer`, plus a see
 ## Camera and ground ownership
 
 - `src/analysis` owns MIDI-derived journey cues only.
-- `src/visual` owns camera plotting, spline control points, terrain recipes, and scene-facing descriptors.
+- `src/visual` owns camera plotting, spline control points, simplex-based synthwave terrain sampling, and scene-facing descriptors.
 - `src/rendering/three` consumes those descriptors to move the camera and draw the grid plane, procedural terrain, and distant world anchor.

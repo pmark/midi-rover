@@ -2,9 +2,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { NormalizedMidiDocument, NoteEvent } from '../core/types.ts';
-import { createAnalysisSnapshot, samplePlaybackFrame } from '../analysis/playbackAnalysis.ts';
+import { createAnalysisSnapshot, createPlaceholderMidiDocument, samplePlaybackFrame } from '../analysis/playbackAnalysis.ts';
 import { createSeedConfig } from './seed.ts';
 import { createVisualSceneProfile, sampleVisualScene } from './sceneProfile.ts';
+import { TERRAIN_SEGMENTS } from './synthwaveTerrain.ts';
 
 const createNote = (
   id: string,
@@ -109,6 +110,20 @@ test('scrubbed sampling is stable and tied to transport time', () => {
   assert.deepEqual(sampleVisualScene(profile, frameOne), sampleVisualScene(profile, frameTwo));
 });
 
+test('synthwave terrain keeps a central road valley between raised shoulders', () => {
+  const analysis = createAnalysisSnapshot(documentFixture);
+  const profile = createVisualSceneProfile(analysis, createSeedConfig(documentFixture.sourceHash, 'synthwave'));
+  const scene = sampleVisualScene(profile, samplePlaybackFrame(analysis, 6.2));
+  const row = Math.floor(TERRAIN_SEGMENTS * 0.18);
+  const rowWidth = TERRAIN_SEGMENTS + 1;
+  const centerHeight = scene.ground.terrainHeights[row * rowWidth + Math.floor(TERRAIN_SEGMENTS / 2)];
+  const leftShoulderHeight = scene.ground.terrainHeights[row * rowWidth + Math.floor(TERRAIN_SEGMENTS * 0.18)];
+  const rightShoulderHeight = scene.ground.terrainHeights[row * rowWidth + Math.floor(TERRAIN_SEGMENTS * 0.82)];
+
+  assert.ok(leftShoulderHeight > centerHeight);
+  assert.ok(rightShoulderHeight > centerHeight);
+});
+
 test('background color evolves smoothly across short transport intervals', () => {
   const analysis = createAnalysisSnapshot(documentFixture);
   const profile = createVisualSceneProfile(analysis, createSeedConfig(documentFixture.sourceHash, 'balanced'));
@@ -119,4 +134,34 @@ test('background color evolves smoothly across short transport intervals', () =>
   assert.ok(Math.abs(earlyScene.background.colorHsl[1] - laterScene.background.colorHsl[1]) < 0.01);
   assert.ok(Math.abs(earlyScene.background.colorHsl[2] - laterScene.background.colorHsl[2]) < 0.01);
   assert.ok(Math.abs(earlyScene.background.fogStrength - laterScene.background.fogStrength) < 0.015);
+});
+
+test('camera always advances forward and keeps a bounded look target ahead', () => {
+  const analysis = createAnalysisSnapshot(documentFixture);
+  const profile = createVisualSceneProfile(analysis, createSeedConfig(documentFixture.sourceHash, 'balanced'));
+  const earlyScene = sampleVisualScene(profile, samplePlaybackFrame(analysis, 2.5));
+  const laterScene = sampleVisualScene(profile, samplePlaybackFrame(analysis, 6.5));
+  const earlyLookAhead = Math.abs(earlyScene.camera.position[2] - earlyScene.camera.target[2]);
+  const laterLookAhead = Math.abs(laterScene.camera.position[2] - laterScene.camera.target[2]);
+
+  assert.ok(laterScene.camera.position[2] < earlyScene.camera.position[2]);
+  assert.ok(earlyLookAhead > 20 && earlyLookAhead < 32);
+  assert.ok(Math.abs(earlyLookAhead - laterLookAhead) < 0.001);
+  assert.ok(Math.abs(earlyScene.camera.target[0]) < 1.1);
+  assert.ok(Math.abs(earlyScene.camera.target[1]) < 3.2);
+});
+
+test('placeholder scene renders deterministically without a MIDI file', () => {
+  const document = createPlaceholderMidiDocument();
+  const analysis = createAnalysisSnapshot(document);
+  const profileA = createVisualSceneProfile(analysis, createSeedConfig(document.sourceHash, ''));
+  const profileB = createVisualSceneProfile(analysis, createSeedConfig(document.sourceHash, ''));
+  const frame = samplePlaybackFrame(analysis, 0);
+  const sceneA = sampleVisualScene(profileA, frame);
+  const sceneB = sampleVisualScene(profileB, frame);
+
+  assert.equal(document.notes.length, 0);
+  assert.ok(sceneA.ambientParticles.length > 0);
+  assert.ok(sceneA.particles.length > 0);
+  assert.deepEqual(sceneA, sceneB);
 });

@@ -3,6 +3,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   Color,
+  Float32BufferAttribute,
   FogExp2,
   GridHelper,
   Group,
@@ -22,15 +23,15 @@ import {
   Scene,
   SphereGeometry,
   DirectionalLight,
+  DoubleSide,
   WireframeGeometry,
   Vector3,
   WebGLRenderer,
 } from 'three';
 import type { AmbientParticle, ParticleInstance, VisualSceneFrame } from '../../visual/types';
+import { TERRAIN_SEGMENTS, TERRAIN_SIZE } from '../../visual/synthwaveTerrain.ts';
 
 const MAX_DYNAMIC_PARTICLES = 1600;
-const TERRAIN_SIZE = 120;
-const TERRAIN_SEGMENTS = 72;
 
 const tempMatrix = new Matrix4();
 const tempPosition = new Vector3();
@@ -42,27 +43,6 @@ const currentCameraTarget = new Vector3();
 
 const toThreeColor = (hue: number, saturation: number, lightness: number, alpha: number): Color =>
   hslColor.clone().setHSL(hue, saturation, lightness * alpha + 0.05);
-
-const fract = (value: number): number => value - Math.floor(value);
-
-const valueNoise = (x: number, z: number): number => {
-  const cellX = Math.floor(x);
-  const cellZ = Math.floor(z);
-  const localX = fract(x);
-  const localZ = fract(z);
-  const smoothX = localX * localX * (3 - 2 * localX);
-  const smoothZ = localZ * localZ * (3 - 2 * localZ);
-  const corner = (offsetX: number, offsetZ: number): number => {
-    const hash = Math.sin((cellX + offsetX) * 127.1 + (cellZ + offsetZ) * 311.7) * 43758.5453123;
-    return fract(hash);
-  };
-  const top = MathUtils.lerp(corner(0, 0), corner(1, 0), smoothX);
-  const bottom = MathUtils.lerp(corner(0, 1), corner(1, 1), smoothX);
-  return MathUtils.lerp(top, bottom, smoothZ) * 2 - 1;
-};
-
-const fractalNoise = (x: number, z: number): number =>
-  valueNoise(x, z) * 0.55 + valueNoise(x * 2.1, z * 2.1) * 0.3 + valueNoise(x * 4.3, z * 4.3) * 0.15;
 
 export class ParticleSceneRenderer {
   private readonly scene = new Scene();
@@ -111,6 +91,14 @@ export class ParticleSceneRenderer {
     opacity: 0.68,
   });
   private readonly terrainWire = new LineSegments(this.terrainWireGeometry, this.terrainWireMaterial);
+  private readonly skyGeometry = new PlaneGeometry(280, 120, 1, 5);
+  private readonly skyMaterial = new MeshBasicMaterial({
+    vertexColors: true,
+    fog: false,
+    side: DoubleSide,
+    depthWrite: false,
+  });
+  private readonly skyBackdrop = new Mesh(this.skyGeometry, this.skyMaterial);
   private readonly sphereAnchorGeometry = new SphereGeometry(1, 32, 24);
   private readonly sphereAnchorMaterial = new MeshBasicMaterial({
     color: 0x7a2d91,
@@ -135,10 +123,15 @@ export class ParticleSceneRenderer {
     this.scene.add(this.dynamicMesh);
     this.scene.add(this.ambientPoints);
     this.scene.add(this.groundGroup);
+    this.scene.add(this.skyBackdrop);
     this.scene.add(this.hemiLight);
     this.scene.add(this.sunLight);
-    this.scene.fog = new FogExp2(0x050b10, 0.06);
-    this.sunLight.position.set(-14, 18, 10);
+    this.scene.fog = new FogExp2(0x120012, 0.018);
+    this.sunLight.position.set(0, 12, -48);
+
+    const skyColors = new Float32BufferAttribute(new Float32Array(this.skyGeometry.attributes.position.count * 3), 3);
+    this.skyGeometry.setAttribute('color', skyColors);
+    this.skyBackdrop.position.set(0, 26, -118);
 
     this.grid.position.y = -4.4;
     const gridMaterial = Array.isArray(this.grid.material) ? this.grid.material[0] : this.grid.material;
@@ -188,6 +181,8 @@ export class ParticleSceneRenderer {
     this.dynamicMaterial.dispose();
     this.ambientGeometry.dispose();
     this.ambientMaterial.dispose();
+    this.skyGeometry.dispose();
+    this.skyMaterial.dispose();
     this.terrainGeometry.dispose();
     this.terrainFillMaterial.dispose();
     this.terrainWireGeometry.dispose();
@@ -243,45 +238,52 @@ export class ParticleSceneRenderer {
 
   private syncGround(frame: VisualSceneFrame): void {
     const accentColor = toThreeColor(...frame.ground.accentColorHsl, 1);
-    const neonGridColor = accentColor.clone().lerp(new Color(0x6cf7ff), 0.55);
-    const terrainFillColor = accentColor.clone().lerp(new Color(0x120015), 0.84);
+    const neonGridColor = accentColor.clone().lerp(new Color(0xcc00ff), 0.7);
+    const terrainFillColor = new Color(0x04010a);
+    const skyTopColor = frame.background.colorHsl ? toThreeColor(frame.background.colorHsl[0], 0.88, 0.42, 1) : new Color(0xbd158f);
+    const skyMidColor = accentColor.clone().lerp(new Color(0xff4f8b), 0.58);
+    const skyHorizonColor = new Color().setHSL(0.08, 0.95, 0.64);
+    const skyBottomColor = new Color(0x07020f);
+    const skyColors = this.skyGeometry.getAttribute('color');
+    const skyPosition = this.skyGeometry.attributes.position;
+    for (let index = 0; index < skyPosition.count; index += 1) {
+      const normalizedHeight = MathUtils.clamp((skyPosition.getY(index) + 60) / 120, 0, 1);
+      const color =
+        normalizedHeight > 0.82
+          ? skyTopColor
+          : normalizedHeight > 0.48
+            ? skyMidColor
+            : normalizedHeight > 0.24
+              ? skyHorizonColor
+              : skyBottomColor;
+      skyColors.setXYZ(index, color.r, color.g, color.b);
+    }
+    skyColors.needsUpdate = true;
+
     this.terrainFillMaterial.color.copy(terrainFillColor);
-    this.terrainFillMaterial.emissive.copy(accentColor.clone().multiplyScalar(0.2));
-    this.terrainFillMaterial.opacity = 0.84;
+    this.terrainFillMaterial.emissive.copy(new Color(0x000000));
+    this.terrainFillMaterial.opacity = 0.98;
     this.terrainWireMaterial.color.copy(neonGridColor);
-    this.terrainWireMaterial.opacity = 0.5 + frame.ground.gridIntensity * 0.34;
-    this.hemiLight.color.copy(neonGridColor);
-    this.hemiLight.groundColor.copy(terrainFillColor.clone().multiplyScalar(0.9));
-    this.sunLight.color.copy(accentColor.clone().lerp(new Color(0xffd36c), 0.28));
-    this.sunLight.intensity = 1.3 + frame.ground.gridIntensity * 0.8;
+    this.terrainWireMaterial.opacity = 0.72 + frame.ground.gridIntensity * 0.18;
+    this.hemiLight.color.copy(skyHorizonColor.clone().lerp(new Color(0xff6ea8), 0.35));
+    this.hemiLight.groundColor.copy(new Color(0x020106));
+    this.hemiLight.intensity = 0.9;
+    this.sunLight.color.copy(skyHorizonColor);
+    this.sunLight.intensity = 0.72;
 
     const gridMaterial = Array.isArray(this.grid.material) ? this.grid.material[0] : this.grid.material;
-    gridMaterial.opacity = 0.32 + frame.ground.gridIntensity * 0.3;
+    gridMaterial.opacity = 0;
     gridMaterial.color.copy(neonGridColor);
 
     this.grid.scale.setScalar(frame.ground.gridScale);
-    this.grid.position.z = frame.ground.terrainScroll * 4;
+    this.grid.position.z = frame.ground.terrainOriginZ;
+    this.terrainFill.position.z = frame.ground.terrainOriginZ;
+    this.terrainWire.position.z = frame.ground.terrainOriginZ;
 
     const positions = this.terrainGeometry.attributes.position;
-    for (let index = 0; index < positions.count; index += 1) {
-      const x = positions.getX(index);
-      const z = positions.getY(index);
-      const normalizedDepth = MathUtils.clamp((z + TERRAIN_SIZE * 0.5) / TERRAIN_SIZE, 0, 1);
-      const horizonLift = Math.pow(1 - normalizedDepth, 2.2);
-      const ridgeNoise = Math.abs(
-        fractalNoise(
-          x * frame.ground.terrainFrequency + frame.ground.terrainScroll,
-          z * frame.ground.terrainFrequency * 0.72,
-        ),
-      );
-      const secondaryNoise = fractalNoise(
-        x * frame.ground.terrainFrequency + frame.ground.terrainScroll,
-        z * frame.ground.terrainFrequency * 0.22 + 18.5,
-      );
-      const ridgedMountain = Math.pow(ridgeNoise, 1.85) * frame.ground.terrainAmplitude * 3.8;
-      const valleyCarve = secondaryNoise * frame.ground.terrainAmplitude * 0.28;
-      const baseShelf = (1 - normalizedDepth) * 0.8;
-      positions.setZ(index, ridgedMountain * horizonLift - valleyCarve - baseShelf);
+    const heightCount = Math.min(positions.count, frame.ground.terrainHeights.length);
+    for (let index = 0; index < heightCount; index += 1) {
+      positions.setZ(index, frame.ground.terrainHeights[index]);
     }
     positions.needsUpdate = true;
     this.terrainGeometry.computeVertexNormals();
@@ -291,10 +293,11 @@ export class ParticleSceneRenderer {
 
     this.sphereAnchor.visible = frame.ground.sphereAnchorVisible;
     this.sphereAnchor.scale.setScalar(frame.ground.sphereAnchorRadius);
-    this.sphereAnchor.material.color.copy(accentColor.clone().lerp(new Color(0xff5ea8), 0.5));
-    this.sphereAnchor.position.x = frame.camera.position[0] * 0.22;
-    this.sphereAnchor.position.y = -10;
-    this.sphereAnchor.position.z = frame.camera.position[2] - 84;
+    this.sphereAnchor.material.color.copy(skyHorizonColor.clone().lerp(new Color(0xff7c54), 0.45));
+    this.sphereAnchor.material.opacity = 0.08;
+    this.sphereAnchor.position.x = 0;
+    this.sphereAnchor.position.y = 4;
+    this.sphereAnchor.position.z = frame.camera.position[2] - 126;
   }
 
   private syncCamera(frame: VisualSceneFrame): void {
