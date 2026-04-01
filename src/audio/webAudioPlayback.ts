@@ -6,8 +6,9 @@ import type {
   NormalizedMidiDocument,
   NoteEvent,
 } from '../core/types';
+import { createFallbackSynthPlayer } from './fallbackSynth';
 import { fallbackInstrumentName, getNoteInstrumentName } from './gmMapping';
-import { getSoundfontObjectUrl } from './soundfontAssets';
+import { primeSoundfontAsset } from './soundfontAssets';
 
 type SoundfontInstrument = {
   play: (
@@ -26,6 +27,10 @@ type SoundfontInstrument = {
 type LoadSummary = {
   cacheHit: boolean;
   fallbackApplied: boolean;
+};
+
+type ScheduledVoice = {
+  stop: (when?: number) => void;
 };
 
 const STORAGE_KEY = 'midi-signal-form-master-volume';
@@ -64,7 +69,9 @@ export const createAudioPlaybackController = (): AudioPlaybackController => {
   const listeners = new Set<AudioPlaybackListener>();
   const audioContext = new AudioContext();
   const masterGain = audioContext.createGain();
+  const fallbackSynth = createFallbackSynthPlayer(audioContext, masterGain);
   const instruments = new Map<string, SoundfontInstrument>();
+  const scheduledFallbackVoices = new Set<ScheduledVoice>();
   let state: AudioPlaybackState = {
     status: 'idle',
     volume: readPersistedVolume(),
@@ -103,6 +110,10 @@ export const createAudioPlaybackController = (): AudioPlaybackController => {
     instruments.forEach((instrument) => {
       instrument.stop(audioContext.currentTime);
     });
+    scheduledFallbackVoices.forEach((voice) => {
+      voice.stop(audioContext.currentTime);
+    });
+    scheduledFallbackVoices.clear();
   };
 
   const getLoadedInstrument = async (instrumentName: string): Promise<LoadSummary> => {
@@ -111,23 +122,22 @@ export const createAudioPlaybackController = (): AudioPlaybackController => {
     }
 
     try {
-      const asset = await getSoundfontObjectUrl(instrumentName);
-      const player = (await Soundfont.instrument(audioContext, asset.objectUrl as never, {
+      const asset = await primeSoundfontAsset(instrumentName);
+      const player = (await Soundfont.instrument(audioContext, asset.sourceUrl as never, {
         destination: masterGain,
-        isSoundfontURL: () => true,
       })) as unknown as SoundfontInstrument;
       instruments.set(instrumentName, player);
       return { cacheHit: asset.cacheHit, fallbackApplied: false };
     } catch (error) {
-      if (instrumentName === fallbackInstrumentName) {
-        throw error;
+      console.warn(`Falling back to synthesized playback for ${instrumentName}.`, error);
+      if (instrumentName !== fallbackInstrumentName && !instruments.has(fallbackInstrumentName)) {
+        try {
+          await getLoadedInstrument(fallbackInstrumentName);
+        } catch {
+          // Synth fallback remains available even if sampled piano fails too.
+        }
       }
-
-      const fallback = await getLoadedInstrument(fallbackInstrumentName);
-      return {
-        cacheHit: fallback.cacheHit,
-        fallbackApplied: true,
-      };
+      return { cacheHit: false, fallbackApplied: true };
     }
   };
 
@@ -143,6 +153,11 @@ export const createAudioPlaybackController = (): AudioPlaybackController => {
     const instrumentName = getNoteInstrumentName(note);
     const instrument = instruments.get(instrumentName) ?? instruments.get(fallbackInstrumentName);
     if (!instrument) {
+      const voice = fallbackSynth.play(note, when, durationSeconds);
+      scheduledFallbackVoices.add(voice);
+      window.setTimeout(() => {
+        scheduledFallbackVoices.delete(voice);
+      }, Math.max(100, Math.ceil((when - audioContext.currentTime + durationSeconds + 0.3) * 1000)));
       return;
     }
 
@@ -263,7 +278,7 @@ export const createAudioPlaybackController = (): AudioPlaybackController => {
           fallbackInstruments,
           message:
             fallbackInstruments > 0
-              ? 'Audio ready with fallback timbres for unsupported instruments.'
+              ? 'Audio ready with synthesized fallback timbres for unsupported instruments.'
               : 'Audio ready. Press Play to start synchronized playback.',
         });
       })().catch((error: unknown) => {

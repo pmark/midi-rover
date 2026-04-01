@@ -10,6 +10,7 @@ import { createAnalysisSnapshot, samplePlaybackFrame } from '../analysis/playbac
 import { parseMidiFile } from '../analysis/midiParser';
 import { createAudioPlaybackController } from '../audio/webAudioPlayback';
 import { ParticleSceneRenderer } from '../rendering/three/particleSceneRenderer';
+import { persistLoadedMidiFile, restorePersistedMidiFile } from './filePersistence';
 import { createSeedConfig } from '../visual/seed';
 import { createVisualSceneProfile, sampleVisualScene } from '../visual/sceneProfile';
 import type { VisualSceneProfile } from '../visual/types';
@@ -316,6 +317,11 @@ export const mountMidiLab = (root: HTMLElement): void => {
         const message = audioError instanceof Error ? audioError.message : 'Audio preparation failed.';
         setError(message);
       });
+      void persistLoadedMidiFile(file).catch((persistenceError: unknown) => {
+        const message =
+          persistenceError instanceof Error ? persistenceError.message : 'MIDI persistence failed.';
+        helperCopy.textContent = `Loaded successfully, but auto-restore could not be saved: ${message}`;
+      });
       renderFrame(state, transport.getState());
     } catch (error) {
       destroyLoadedState();
@@ -471,4 +477,20 @@ export const mountMidiLab = (root: HTMLElement): void => {
 
     renderFrame(loadedState, loadedState.transport.getState());
   });
+
+  void (async () => {
+    try {
+      const persistedFile = await restorePersistedMidiFile();
+      if (!persistedFile) {
+        return;
+      }
+
+      helperCopy.textContent = 'Restoring the last loaded MIDI file from browser storage.';
+      await loadMidiFile(persistedFile);
+    } catch (restoreError) {
+      const message =
+        restoreError instanceof Error ? restoreError.message : 'Stored MIDI restore failed.';
+      helperCopy.textContent = `Previous MIDI restore was skipped: ${message}`;
+    }
+  })();
 };
