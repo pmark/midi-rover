@@ -15,12 +15,23 @@ export interface MeterEvent {
 export interface TrackInfo {
   index: number;
   name: string;
+  programNumbers: number[];
+}
+
+export interface ProgramChangeEvent {
+  trackIndex: number;
+  channel: number;
+  programNumber: number;
+  tick: number;
+  timeSeconds: number;
 }
 
 export interface NoteEvent {
   id: string;
   trackIndex: number;
   channel: number;
+  programNumber: number;
+  isPercussion: boolean;
   pitch: number;
   velocity: number;
   startTick: number;
@@ -40,6 +51,7 @@ export interface NormalizedMidiDocument {
   tracks: TrackInfo[];
   tempoEvents: TempoEvent[];
   meterEvents: MeterEvent[];
+  programChanges: ProgramChangeEvent[];
   notes: NoteEvent[];
 }
 
@@ -79,6 +91,31 @@ export interface TransportState {
   progress: number;
   isPlaying: boolean;
   playbackRate: number;
+}
+
+export type AudioPlaybackStatus = 'idle' | 'loading' | 'ready' | 'playing' | 'blocked' | 'error';
+
+export interface AudioPlaybackState {
+  status: AudioPlaybackStatus;
+  volume: number;
+  loadingInstruments: number;
+  loadedInstruments: number;
+  cachedInstruments: number;
+  fallbackInstruments: number;
+  message: string | null;
+}
+
+export type AudioPlaybackListener = (state: AudioPlaybackState) => void;
+
+export interface AudioPlaybackController {
+  getState(): AudioPlaybackState;
+  subscribe(listener: AudioPlaybackListener): () => void;
+  prepare(document: NormalizedMidiDocument): Promise<void>;
+  play(startTimeSeconds: number): Promise<boolean>;
+  pause(): void;
+  seek(timeSeconds: number, resumePlayback?: boolean): Promise<void>;
+  setVolume(volume: number): void;
+  destroy(): void;
 }
 
 export type TransportListener = (state: TransportState) => void;

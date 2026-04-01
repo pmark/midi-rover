@@ -3,12 +3,15 @@ import type {
   MeterEvent,
   NormalizedMidiDocument,
   NoteEvent,
+  ProgramChangeEvent,
   TempoEvent,
   TrackInfo,
 } from '../core/types';
 
 type ActiveNote = {
   noteId: string;
+  programNumber: number;
+  isPercussion: boolean;
   pitch: number;
   velocity: number;
   startTick: number;
@@ -154,6 +157,8 @@ const closeDanglingNotes = (
         id: activeNote.noteId,
         trackIndex: activeNote.trackIndex,
         channel: activeNote.channel,
+        programNumber: activeNote.programNumber,
+        isPercussion: activeNote.isPercussion,
         pitch: activeNote.pitch,
         velocity: activeNote.velocity,
         startTick: activeNote.startTick,
@@ -175,12 +180,14 @@ export const parseMidiFile = (bytes: Uint8Array): NormalizedMidiDocument => {
       : null;
   const rawTempoEvents: Array<{ tick: number; microsecondsPerBeat: number }> = [];
   const rawMeterEvents: Array<{ tick: number; numerator: number; denominator: number }> = [];
+  const rawProgramChanges: ProgramChangeEvent[] = [];
   const tracks: TrackInfo[] = [];
   let maxTick = 0;
 
   parsed.tracks.forEach((track, trackIndex) => {
     let absoluteTick = 0;
     let trackName = `Track ${trackIndex + 1}`;
+    const trackPrograms = new Set<number>();
 
     track.forEach((event) => {
       absoluteTick += event.deltaTime;
@@ -204,11 +211,23 @@ export const parseMidiFile = (bytes: Uint8Array): NormalizedMidiDocument => {
           denominator: event.denominator,
         });
       }
+
+      if (event.type === 'programChange') {
+        rawProgramChanges.push({
+          trackIndex,
+          channel: event.channel,
+          programNumber: event.programNumber,
+          tick: absoluteTick,
+          timeSeconds: 0,
+        });
+        trackPrograms.add(event.programNumber);
+      }
     });
 
     tracks.push({
       index: trackIndex,
       name: trackName,
+      programNumbers: Array.from(trackPrograms).sort((left, right) => left - right),
     });
   });
 
@@ -219,6 +238,12 @@ export const parseMidiFile = (bytes: Uint8Array): NormalizedMidiDocument => {
       timeSeconds: ticksToSeconds(event.tick, tempoEvents, ticksPerBeat, secondsPerTick),
     })),
   );
+  const programChanges = rawProgramChanges
+    .map((event) => ({
+      ...event,
+      timeSeconds: ticksToSeconds(event.tick, tempoEvents, ticksPerBeat, secondsPerTick),
+    }))
+    .sort((left, right) => left.timeSeconds - right.timeSeconds || left.channel - right.channel);
 
   const notes: NoteEvent[] = [];
   let noteIndex = 0;
@@ -226,15 +251,22 @@ export const parseMidiFile = (bytes: Uint8Array): NormalizedMidiDocument => {
   parsed.tracks.forEach((track, trackIndex) => {
     let absoluteTick = 0;
     const openNotes = new Map<string, ActiveNote[]>();
+    const currentPrograms = new Map<number, number>();
 
     track.forEach((event) => {
       absoluteTick += event.deltaTime;
+
+      if (event.type === 'programChange') {
+        currentPrograms.set(event.channel, event.programNumber);
+      }
 
       if (event.type === 'noteOn' && event.velocity > 0) {
         const key = `${event.channel}:${event.noteNumber}`;
         const stack = openNotes.get(key) ?? [];
         stack.push({
           noteId: `note-${trackIndex}-${event.channel}-${event.noteNumber}-${absoluteTick}-${noteIndex++}`,
+          programNumber: currentPrograms.get(event.channel) ?? 0,
+          isPercussion: event.channel === 9,
           pitch: event.noteNumber,
           velocity: event.velocity,
           startTick: absoluteTick,
@@ -259,6 +291,8 @@ export const parseMidiFile = (bytes: Uint8Array): NormalizedMidiDocument => {
           id: activeNote.noteId,
           trackIndex,
           channel: event.channel,
+          programNumber: activeNote.programNumber,
+          isPercussion: activeNote.isPercussion,
           pitch: event.noteNumber,
           velocity: activeNote.velocity,
           startTick: activeNote.startTick,
@@ -293,6 +327,7 @@ export const parseMidiFile = (bytes: Uint8Array): NormalizedMidiDocument => {
     tracks,
     tempoEvents,
     meterEvents,
+    programChanges,
     notes,
   };
 };

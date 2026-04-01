@@ -1,7 +1,14 @@
-import type { AnalysisSnapshot, PlaybackFrame, TransportController, TransportState } from '../core/types';
+import type {
+  AnalysisSnapshot,
+  AudioPlaybackState,
+  PlaybackFrame,
+  TransportController,
+  TransportState,
+} from '../core/types';
 import { createTransportController } from '../core/transport';
 import { createAnalysisSnapshot, samplePlaybackFrame } from '../analysis/playbackAnalysis';
 import { parseMidiFile } from '../analysis/midiParser';
+import { createAudioPlaybackController } from '../audio/webAudioPlayback';
 import { ParticleSceneRenderer } from '../rendering/three/particleSceneRenderer';
 import { createSeedConfig } from '../visual/seed';
 import { createVisualSceneProfile, sampleVisualScene } from '../visual/sceneProfile';
@@ -30,9 +37,30 @@ const describeCue = (frame: PlaybackFrame): string => {
   return `${frame.sectionCue.label} ${(frame.sectionCue.energy * 100).toFixed(0)}%`;
 };
 
+const describeAudioStatus = (state: AudioPlaybackState): string => {
+  if (state.status === 'loading') {
+    return `loading ${state.loadedInstruments + state.loadingInstruments > 0 ? `${state.loadedInstruments}/${state.loadedInstruments + state.loadingInstruments}` : ''}`.trim();
+  }
+
+  if (state.status === 'blocked') {
+    return 'gesture required';
+  }
+
+  return state.status;
+};
+
 export const mountMidiLab = (root: HTMLElement): void => {
+  const audioController = createAudioPlaybackController();
+
   root.innerHTML = `
     <div class="app-shell">
+      <div class="drop-overlay" data-drop-overlay aria-hidden="true">
+        <div class="drop-overlay-card">
+          <div class="eyebrow">Quick Load</div>
+          <h2 class="drop-overlay-title">Drop MIDI file</h2>
+          <p class="drop-overlay-copy">Release anywhere to parse the file, rebuild analysis, and refresh the particle scene.</p>
+        </div>
+      </div>
       <div class="lab-layout">
         <aside class="control-panel">
           <header>
@@ -62,6 +90,12 @@ export const mountMidiLab = (root: HTMLElement): void => {
               <button type="button" data-restart>Restart</button>
             </div>
             <label class="field">
+              <span class="field-label"><span>Master volume</span><span data-volume-readout>80%</span></span>
+              <div class="range-line">
+                <input data-volume type="range" min="0" max="1" value="0.8" step="0.01" />
+              </div>
+            </label>
+            <label class="field">
               <span class="field-label"><span>Timeline</span><span data-time-readout>0:00 / 0:00</span></span>
               <div class="range-line">
                 <input data-seek type="range" min="0" max="1" value="0" step="0.001" />
@@ -69,11 +103,12 @@ export const mountMidiLab = (root: HTMLElement): void => {
               </div>
             </label>
             <label class="field">
-              <span class="field-label"><span>Playback rate</span><span data-rate-readout>1.00x</span></span>
+              <span class="field-label"><span>Playback rate</span><span data-rate-readout>Locked</span></span>
               <div class="range-line">
-                <input data-rate type="range" min="0.5" max="2" value="1" step="0.05" />
+                <input data-rate type="range" min="1" max="1" value="1" step="0.05" disabled />
               </div>
             </label>
+            <p class="helper-copy">Rate control is locked for the synchronized audio pass.</p>
           </section>
 
           <section class="stack">
@@ -87,6 +122,8 @@ export const mountMidiLab = (root: HTMLElement): void => {
               <div class="metric-card"><dt>Energy</dt><dd data-energy>0%</dd></div>
               <div class="metric-card"><dt>Dominant pitch</dt><dd data-pitch>--</dd></div>
               <div class="metric-card"><dt>Current cue</dt><dd data-cue-label>idle</dd></div>
+              <div class="metric-card"><dt>Audio</dt><dd data-audio-status>idle</dd></div>
+              <div class="metric-card"><dt>Instruments</dt><dd data-audio-instruments>0</dd></div>
             </dl>
             <p class="helper-copy" data-helper>Waiting for a MIDI file. The same MIDI content and the same seed override produce the same visual field.</p>
             <p class="error-copy" data-error hidden></p>
@@ -114,10 +151,13 @@ export const mountMidiLab = (root: HTMLElement): void => {
   `;
 
   const fileInput = root.querySelector<HTMLInputElement>('[data-file-input]');
+  const appShell = root.querySelector<HTMLElement>('.app-shell');
+  const dropOverlay = root.querySelector<HTMLElement>('[data-drop-overlay]');
   const seedInput = root.querySelector<HTMLInputElement>('[data-seed-input]');
   const playButton = root.querySelector<HTMLButtonElement>('[data-play]');
   const pauseButton = root.querySelector<HTMLButtonElement>('[data-pause]');
   const restartButton = root.querySelector<HTMLButtonElement>('[data-restart]');
+  const volumeInput = root.querySelector<HTMLInputElement>('[data-volume]');
   const seekInput = root.querySelector<HTMLInputElement>('[data-seek]');
   const rateInput = root.querySelector<HTMLInputElement>('[data-rate]');
   const snapshotButton = root.querySelector<HTMLButtonElement>('[data-snapshot]');
@@ -127,6 +167,7 @@ export const mountMidiLab = (root: HTMLElement): void => {
   const timeReadout = root.querySelector<HTMLElement>('[data-time-readout]');
   const progressReadout = root.querySelector<HTMLElement>('[data-progress-readout]');
   const rateReadout = root.querySelector<HTMLElement>('[data-rate-readout]');
+  const volumeReadout = root.querySelector<HTMLElement>('[data-volume-readout]');
   const fileName = root.querySelector<HTMLElement>('[data-file-name]');
   const seedDisplay = root.querySelector<HTMLElement>('[data-seed-display]');
   const overlaySeed = root.querySelector<HTMLElement>('[data-overlay-seed]');
@@ -140,13 +181,18 @@ export const mountMidiLab = (root: HTMLElement): void => {
   const energyMetric = root.querySelector<HTMLElement>('[data-energy]');
   const pitchMetric = root.querySelector<HTMLElement>('[data-pitch]');
   const cueLabelMetric = root.querySelector<HTMLElement>('[data-cue-label]');
+  const audioStatusMetric = root.querySelector<HTMLElement>('[data-audio-status]');
+  const audioInstrumentsMetric = root.querySelector<HTMLElement>('[data-audio-instruments]');
 
   if (
     !fileInput ||
+    !appShell ||
+    !dropOverlay ||
     !seedInput ||
     !playButton ||
     !pauseButton ||
     !restartButton ||
+    !volumeInput ||
     !seekInput ||
     !rateInput ||
     !snapshotButton ||
@@ -156,6 +202,7 @@ export const mountMidiLab = (root: HTMLElement): void => {
     !timeReadout ||
     !progressReadout ||
     !rateReadout ||
+    !volumeReadout ||
     !fileName ||
     !seedDisplay ||
     !overlaySeed ||
@@ -168,22 +215,55 @@ export const mountMidiLab = (root: HTMLElement): void => {
     !polyphonyMetric ||
     !energyMetric ||
     !pitchMetric ||
-    !cueLabelMetric
+    !cueLabelMetric ||
+    !audioStatusMetric ||
+    !audioInstrumentsMetric
   ) {
     throw new Error('App shell did not mount correctly.');
   }
 
   let loadedState: LoadedState | null = null;
   let unsubscribeTransport: (() => void) | null = null;
+  let dragDepth = 0;
+
+  volumeInput.value = audioController.getState().volume.toFixed(2);
+  volumeReadout.textContent = `${Math.round(audioController.getState().volume * 100)}%`;
+
+  const hasFiles = (dataTransfer: DataTransfer | null): boolean =>
+    Array.from(dataTransfer?.types ?? []).includes('Files');
+
+  const setDropOverlayVisible = (visible: boolean): void => {
+    appShell.classList.toggle('drag-active', visible);
+    dropOverlay.classList.toggle('visible', visible);
+    dropOverlay.setAttribute('aria-hidden', visible ? 'false' : 'true');
+  };
+
+  const extractMidiFile = (dataTransfer: DataTransfer | null): File | null => {
+    const files = Array.from(dataTransfer?.files ?? []);
+    return files.find((file) => /\.midi?$/i.test(file.name)) ?? files[0] ?? null;
+  };
 
   const setError = (message: string | null): void => {
     errorCopy.hidden = message === null;
     errorCopy.textContent = message ?? '';
   };
 
+  const renderAudioState = (audioState: AudioPlaybackState): void => {
+    audioStatusMetric.textContent = describeAudioStatus(audioState);
+    audioInstrumentsMetric.textContent = `${audioState.loadedInstruments}`;
+    volumeInput.value = audioState.volume.toFixed(2);
+    volumeReadout.textContent = `${Math.round(audioState.volume * 100)}%`;
+    if (audioState.status === 'error' && audioState.message) {
+      setError(audioState.message);
+    }
+  };
+
+  audioController.subscribe(renderAudioState);
+
   const destroyLoadedState = (): void => {
     unsubscribeTransport?.();
     unsubscribeTransport = null;
+    audioController.pause();
     loadedState?.transport.destroy();
     loadedState?.renderer.dispose();
     loadedState = null;
@@ -231,7 +311,11 @@ export const mountMidiLab = (root: HTMLElement): void => {
       loadedState = state;
       fileName.textContent = file.name;
       helperCopy.textContent =
-        'Analysis is precomputed once, then the transport samples pure playback frames that drive the visual mapping layer.';
+        'Analysis is precomputed once. Audio instruments prepare in parallel, then transport time drives both the renderer and the audio scheduler.';
+      void audioController.prepare(document).catch((audioError: unknown) => {
+        const message = audioError instanceof Error ? audioError.message : 'Audio preparation failed.';
+        setError(message);
+      });
       renderFrame(state, transport.getState());
     } catch (error) {
       destroyLoadedState();
@@ -249,6 +333,62 @@ export const mountMidiLab = (root: HTMLElement): void => {
     }
   });
 
+  const handleDragEnter = (event: DragEvent): void => {
+    if (!hasFiles(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    dragDepth += 1;
+    setDropOverlayVisible(true);
+  };
+
+  const handleDragOver = (event: DragEvent): void => {
+    if (!hasFiles(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'copy';
+    }
+    setDropOverlayVisible(true);
+  };
+
+  const handleDragLeave = (event: DragEvent): void => {
+    if (!hasFiles(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) {
+      setDropOverlayVisible(false);
+    }
+  };
+
+  const handleDrop = async (event: DragEvent): Promise<void> => {
+    if (!hasFiles(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    dragDepth = 0;
+    setDropOverlayVisible(false);
+
+    const file = extractMidiFile(event.dataTransfer);
+    if (!file) {
+      return;
+    }
+
+    await loadMidiFile(file);
+  };
+
+  window.addEventListener('dragenter', handleDragEnter);
+  window.addEventListener('dragover', handleDragOver);
+  window.addEventListener('dragleave', handleDragLeave);
+  window.addEventListener('drop', handleDrop);
+
   seedInput.addEventListener('input', () => {
     if (!loadedState) {
       seedDisplay.textContent = seedInput.value.trim() || 'auto';
@@ -264,10 +404,20 @@ export const mountMidiLab = (root: HTMLElement): void => {
   });
 
   playButton.addEventListener('click', () => {
-    loadedState?.transport.play();
+    if (!loadedState) {
+      return;
+    }
+
+    void (async () => {
+      const didStartAudio = await audioController.play(loadedState.transport.getState().currentTimeSeconds);
+      if (didStartAudio) {
+        loadedState.transport.play();
+      }
+    })();
   });
 
   pauseButton.addEventListener('click', () => {
+    audioController.pause();
     loadedState?.transport.pause();
   });
 
@@ -276,8 +426,10 @@ export const mountMidiLab = (root: HTMLElement): void => {
       return;
     }
 
+    audioController.pause();
     loadedState.transport.pause();
     loadedState.transport.seek(0);
+    void audioController.seek(0, false);
   });
 
   seekInput.addEventListener('input', () => {
@@ -285,16 +437,31 @@ export const mountMidiLab = (root: HTMLElement): void => {
       return;
     }
 
-    loadedState.transport.seek(Number(seekInput.value) * loadedState.analysis.document.durationSeconds);
+    const currentState = loadedState;
+    const nextTime = Number(seekInput.value) * currentState.analysis.document.durationSeconds;
+    const wasPlaying = currentState.transport.getState().isPlaying;
+    if (wasPlaying) {
+      currentState.transport.pause();
+    }
+    currentState.transport.seek(nextTime);
+    void audioController.seek(nextTime, false).then(() => {
+      if (wasPlaying) {
+        void (async () => {
+          const didStartAudio = await audioController.play(nextTime);
+          if (didStartAudio) {
+            currentState.transport.play();
+          }
+        })();
+      }
+    });
   });
 
   rateInput.addEventListener('input', () => {
-    if (!loadedState) {
-      rateReadout.textContent = `${Number(rateInput.value).toFixed(2)}x`;
-      return;
-    }
+    rateReadout.textContent = 'Locked';
+  });
 
-    loadedState.transport.setRate(Number(rateInput.value));
+  volumeInput.addEventListener('input', () => {
+    audioController.setVolume(Number(volumeInput.value));
   });
 
   snapshotButton.addEventListener('click', () => {

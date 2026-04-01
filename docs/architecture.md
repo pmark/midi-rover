@@ -4,6 +4,7 @@ This milestone keeps the app split across five boundaries:
 
 - `src/core`: neutral contracts for MIDI documents, playback frames, seeds, and transport.
 - `src/analysis`: MIDI parsing plus precomputed timeline and feature sampling.
+- `src/audio`: fetched soundfont loading, Web Audio scheduling, and master output control.
 - `src/visual`: deterministic mapping from musical features into scene-ready particle descriptors.
 - `src/rendering/three`: Three.js-only rendering of ambient and dynamic particles.
 - `src/ui`: browser file loading, transport controls, and orchestration.
@@ -13,9 +14,10 @@ This milestone keeps the app split across five boundaries:
 1. The UI reads a local MIDI file into bytes.
 2. The analysis adapter parses those bytes into a `NormalizedMidiDocument`.
 3. The analysis snapshot derives section cues and playback sampling metrics.
-4. The transport samples a `PlaybackFrame` at the current playhead time.
-5. The visual scene profile maps that frame into deterministic particle descriptors.
-6. The Three renderer draws those descriptors without direct MIDI knowledge.
+4. The audio controller prepares cached soundfont instruments for the programs used by the MIDI file.
+5. The shared transport advances the playhead for both audio scheduling and visual sampling.
+6. The visual scene profile maps the current `PlaybackFrame` into deterministic particle descriptors.
+7. The Three renderer draws those descriptors without direct MIDI knowledge.
 
 ## Layer model
 
