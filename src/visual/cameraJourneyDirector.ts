@@ -3,6 +3,8 @@ import { createDeterministicRandom } from './seed.ts';
 import type { VisualCameraDirector, VisualLayerContext } from './types.ts';
 
 type Point3 = [x: number, y: number, z: number];
+const MIN_DOWNWARD_ANGLE_RADIANS = (22 * Math.PI) / 180;
+const MAX_DOWNWARD_ANGLE_RADIANS = (84 * Math.PI) / 180;
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
@@ -74,10 +76,22 @@ const createCameraControlPoints = (context: VisualLayerContext): Point3[] => {
 const computeTarget = (frame: PlaybackFrame, cameraPosition: Point3): Point3 => {
   const pitchCenter = frame.dominantPitch === null ? 0.5 : normalizePitch(frame.dominantPitch);
   const targetX = clamp((pitchCenter - 0.5) * 4.8 + (frame.polyphonyNormalized - 0.5) * 1.4, -4.5, 4.5);
-  const targetY = lerp(-2.2, 3.6, pitchCenter) + frame.velocityEnergy * 0.8;
+  const targetY = lerp(-3.9, 1.8, pitchCenter) + frame.velocityEnergy * 0.45;
   const targetZ = cameraPosition[2] - lerp(6.4, 10.8, frame.progress) - frame.recentOnsets.length * 0.03;
 
   return [targetX, targetY, targetZ];
+};
+
+const constrainTargetToGroundView = (cameraPosition: Point3, target: Point3): Point3 => {
+  const horizontalDistance = Math.max(1.5, Math.abs(cameraPosition[2] - target[2]));
+  const currentAngle = Math.atan2(cameraPosition[1] - target[1], horizontalDistance);
+  const clampedAngle = clamp(currentAngle, MIN_DOWNWARD_ANGLE_RADIANS, MAX_DOWNWARD_ANGLE_RADIANS);
+
+  return [
+    target[0],
+    cameraPosition[1] - Math.tan(clampedAngle) * horizontalDistance,
+    target[2],
+  ];
 };
 
 export class CameraJourneyDirector implements VisualCameraDirector {
@@ -91,7 +105,7 @@ export class CameraJourneyDirector implements VisualCameraDirector {
     const cameraProgress = clamp(journey.progress * 0.92 + journey.travelSpeed * 0.03, 0, 1);
     const position = interpolatePoint(this.controlPoints, cameraProgress);
     const aheadPosition = interpolatePoint(this.controlPoints, clamp(cameraProgress + 0.02 + journey.travelSpeed * 0.015, 0, 1));
-    const target = computeTarget(frame, aheadPosition);
+    const target = constrainTargetToGroundView(position, computeTarget(frame, aheadPosition));
     const rollDirection = journey.segment?.label === 'orbit' ? 1 : journey.segment?.label === 'release' ? -0.35 : 0.2;
     const rollRadians = clamp((journey.complexity - 0.4) * 0.22 * rollDirection, -0.12, 0.12);
     const fieldOfViewDegrees = clamp(42 + journey.travelSpeed * 7 + journey.complexity * 5, 40, 54);

@@ -6,17 +6,23 @@ import {
   FogExp2,
   GridHelper,
   Group,
+  HemisphereLight,
   InstancedMesh,
+  LineBasicMaterial,
+  LineSegments,
   MathUtils,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
+  MeshStandardMaterial,
   PerspectiveCamera,
   PlaneGeometry,
   Points,
   PointsMaterial,
   Scene,
   SphereGeometry,
+  DirectionalLight,
+  WireframeGeometry,
   Vector3,
   WebGLRenderer,
 } from 'three';
@@ -87,21 +93,34 @@ export class ParticleSceneRenderer {
   private readonly groundGroup = new Group();
   private readonly grid = new GridHelper(TERRAIN_SIZE, 36, 0x8fd7ff, 0x315d68);
   private readonly terrainGeometry = new PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, TERRAIN_SEGMENTS, TERRAIN_SEGMENTS);
-  private readonly terrainMaterial = new MeshBasicMaterial({
-    color: 0x1d3b44,
+  private readonly terrainFillMaterial = new MeshStandardMaterial({
+    color: 0x16061e,
+    emissive: 0x1a0624,
+    emissiveIntensity: 0.42,
+    roughness: 0.88,
+    metalness: 0.08,
     transparent: true,
-    opacity: 0.46,
-    wireframe: true,
+    opacity: 0.92,
+    flatShading: false,
   });
-  private readonly terrain = new Mesh(this.terrainGeometry, this.terrainMaterial);
+  private readonly terrainFill = new Mesh(this.terrainGeometry, this.terrainFillMaterial);
+  private terrainWireGeometry = new WireframeGeometry(this.terrainGeometry);
+  private readonly terrainWireMaterial = new LineBasicMaterial({
+    color: 0x63f3ff,
+    transparent: true,
+    opacity: 0.68,
+  });
+  private readonly terrainWire = new LineSegments(this.terrainWireGeometry, this.terrainWireMaterial);
   private readonly sphereAnchorGeometry = new SphereGeometry(1, 32, 24);
   private readonly sphereAnchorMaterial = new MeshBasicMaterial({
-    color: 0x21474f,
+    color: 0x7a2d91,
     transparent: true,
-    opacity: 0.2,
+    opacity: 0.26,
     wireframe: true,
   });
   private readonly sphereAnchor = new Mesh(this.sphereAnchorGeometry, this.sphereAnchorMaterial);
+  private readonly hemiLight = new HemisphereLight(0x6ddcff, 0x120015, 1.05);
+  private readonly sunLight = new DirectionalLight(0xff8bd8, 1.7);
   private readonly resizeObserver: ResizeObserver;
 
   private readonly host: HTMLElement;
@@ -116,16 +135,23 @@ export class ParticleSceneRenderer {
     this.scene.add(this.dynamicMesh);
     this.scene.add(this.ambientPoints);
     this.scene.add(this.groundGroup);
+    this.scene.add(this.hemiLight);
+    this.scene.add(this.sunLight);
     this.scene.fog = new FogExp2(0x050b10, 0.06);
+    this.sunLight.position.set(-14, 18, 10);
 
     this.grid.position.y = -4.4;
     const gridMaterial = Array.isArray(this.grid.material) ? this.grid.material[0] : this.grid.material;
     gridMaterial.transparent = true;
     this.groundGroup.add(this.grid);
 
-    this.terrain.rotation.x = -Math.PI / 2;
-    this.terrain.position.y = -4.6;
-    this.groundGroup.add(this.terrain);
+    this.terrainFill.rotation.x = -Math.PI / 2;
+    this.terrainFill.position.y = -5.3;
+    this.groundGroup.add(this.terrainFill);
+
+    this.terrainWire.rotation.x = -Math.PI / 2;
+    this.terrainWire.position.y = -5.15;
+    this.groundGroup.add(this.terrainWire);
 
     this.sphereAnchor.position.set(0, -16, -64);
     this.groundGroup.add(this.sphereAnchor);
@@ -163,7 +189,9 @@ export class ParticleSceneRenderer {
     this.ambientGeometry.dispose();
     this.ambientMaterial.dispose();
     this.terrainGeometry.dispose();
-    this.terrainMaterial.dispose();
+    this.terrainFillMaterial.dispose();
+    this.terrainWireGeometry.dispose();
+    this.terrainWireMaterial.dispose();
     this.sphereAnchorGeometry.dispose();
     this.sphereAnchorMaterial.dispose();
     this.renderer.dispose();
@@ -215,12 +243,21 @@ export class ParticleSceneRenderer {
 
   private syncGround(frame: VisualSceneFrame): void {
     const accentColor = toThreeColor(...frame.ground.accentColorHsl, 1);
-    this.terrainMaterial.color.copy(accentColor).multiplyScalar(0.72);
-    this.terrainMaterial.opacity = 0.18 + frame.ground.gridIntensity * 0.24;
+    const neonGridColor = accentColor.clone().lerp(new Color(0x6cf7ff), 0.55);
+    const terrainFillColor = accentColor.clone().lerp(new Color(0x120015), 0.84);
+    this.terrainFillMaterial.color.copy(terrainFillColor);
+    this.terrainFillMaterial.emissive.copy(accentColor.clone().multiplyScalar(0.2));
+    this.terrainFillMaterial.opacity = 0.84;
+    this.terrainWireMaterial.color.copy(neonGridColor);
+    this.terrainWireMaterial.opacity = 0.5 + frame.ground.gridIntensity * 0.34;
+    this.hemiLight.color.copy(neonGridColor);
+    this.hemiLight.groundColor.copy(terrainFillColor.clone().multiplyScalar(0.9));
+    this.sunLight.color.copy(accentColor.clone().lerp(new Color(0xffd36c), 0.28));
+    this.sunLight.intensity = 1.3 + frame.ground.gridIntensity * 0.8;
 
     const gridMaterial = Array.isArray(this.grid.material) ? this.grid.material[0] : this.grid.material;
-    gridMaterial.opacity = frame.ground.gridIntensity;
-    gridMaterial.color.copy(accentColor).lerp(new Color(0xffffff), 0.2);
+    gridMaterial.opacity = 0.32 + frame.ground.gridIntensity * 0.3;
+    gridMaterial.color.copy(neonGridColor);
 
     this.grid.scale.setScalar(frame.ground.gridScale);
     this.grid.position.z = frame.ground.terrainScroll * 4;
@@ -229,19 +266,34 @@ export class ParticleSceneRenderer {
     for (let index = 0; index < positions.count; index += 1) {
       const x = positions.getX(index);
       const z = positions.getY(index);
-      const noise = fractalNoise(
-        x * frame.ground.terrainFrequency + frame.ground.terrainScroll,
-        z * frame.ground.terrainFrequency,
+      const normalizedDepth = MathUtils.clamp((z + TERRAIN_SIZE * 0.5) / TERRAIN_SIZE, 0, 1);
+      const horizonLift = Math.pow(1 - normalizedDepth, 2.2);
+      const ridgeNoise = Math.abs(
+        fractalNoise(
+          x * frame.ground.terrainFrequency + frame.ground.terrainScroll,
+          z * frame.ground.terrainFrequency * 0.72,
+        ),
       );
-      positions.setZ(index, noise * frame.ground.terrainAmplitude);
+      const secondaryNoise = fractalNoise(
+        x * frame.ground.terrainFrequency + frame.ground.terrainScroll,
+        z * frame.ground.terrainFrequency * 0.22 + 18.5,
+      );
+      const ridgedMountain = Math.pow(ridgeNoise, 1.85) * frame.ground.terrainAmplitude * 3.8;
+      const valleyCarve = secondaryNoise * frame.ground.terrainAmplitude * 0.28;
+      const baseShelf = (1 - normalizedDepth) * 0.8;
+      positions.setZ(index, ridgedMountain * horizonLift - valleyCarve - baseShelf);
     }
     positions.needsUpdate = true;
     this.terrainGeometry.computeVertexNormals();
+    this.terrainWireGeometry.dispose();
+    this.terrainWireGeometry = new WireframeGeometry(this.terrainGeometry);
+    this.terrainWire.geometry = this.terrainWireGeometry;
 
     this.sphereAnchor.visible = frame.ground.sphereAnchorVisible;
     this.sphereAnchor.scale.setScalar(frame.ground.sphereAnchorRadius);
-    this.sphereAnchor.material.color.copy(accentColor).multiplyScalar(0.78);
+    this.sphereAnchor.material.color.copy(accentColor.clone().lerp(new Color(0xff5ea8), 0.5));
     this.sphereAnchor.position.x = frame.camera.position[0] * 0.22;
+    this.sphereAnchor.position.y = -10;
     this.sphereAnchor.position.z = frame.camera.position[2] - 84;
   }
 

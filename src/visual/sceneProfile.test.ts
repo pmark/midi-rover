@@ -27,6 +27,11 @@ const createNote = (
   durationSeconds,
 });
 
+const hueDistance = (left: number, right: number): number => {
+  const direct = Math.abs(left - right);
+  return Math.min(direct, 1 - direct);
+};
+
 const documentFixture: NormalizedMidiDocument = {
   sourceHash: 'fixture-midi',
   format: 1,
@@ -102,4 +107,16 @@ test('scrubbed sampling is stable and tied to transport time', () => {
   const frameTwo = samplePlaybackFrame(analysis, 8.2);
 
   assert.deepEqual(sampleVisualScene(profile, frameOne), sampleVisualScene(profile, frameTwo));
+});
+
+test('background color evolves smoothly across short transport intervals', () => {
+  const analysis = createAnalysisSnapshot(documentFixture);
+  const profile = createVisualSceneProfile(analysis, createSeedConfig(documentFixture.sourceHash, 'balanced'));
+  const earlyScene = sampleVisualScene(profile, samplePlaybackFrame(analysis, 4.1));
+  const laterScene = sampleVisualScene(profile, samplePlaybackFrame(analysis, 4.22));
+
+  assert.ok(hueDistance(earlyScene.background.colorHsl[0], laterScene.background.colorHsl[0]) < 0.01);
+  assert.ok(Math.abs(earlyScene.background.colorHsl[1] - laterScene.background.colorHsl[1]) < 0.01);
+  assert.ok(Math.abs(earlyScene.background.colorHsl[2] - laterScene.background.colorHsl[2]) < 0.01);
+  assert.ok(Math.abs(earlyScene.background.fogStrength - laterScene.background.fogStrength) < 0.015);
 });

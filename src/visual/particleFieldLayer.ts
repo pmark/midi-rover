@@ -12,6 +12,21 @@ import type {
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
 
+const lerp = (start: number, end: number, amount: number): number => start + (end - start) * amount;
+
+const smoothStep = (value: number): number => {
+  const clamped = clamp(value, 0, 1);
+  return clamped * clamped * (3 - 2 * clamped);
+};
+
+const shortestHueDelta = (from: number, to: number): number => {
+  const delta = (to - from + 0.5) % 1 - 0.5;
+  return delta < -0.5 ? delta + 1 : delta;
+};
+
+const lerpHue = (from: number, to: number, amount: number): number =>
+  (from + shortestHueDelta(from, to) * amount + 1) % 1;
+
 const normalizePitch = (pitch: number): number => clamp((pitch - 24) / 72, 0, 1);
 
 const createAmbientField = (seed: number, count = 180): AmbientParticle[] => {
@@ -124,20 +139,57 @@ export class ParticleFieldLayer implements VisualLayer {
     const burstParticles = frame.recentOnsets.slice(-14).flatMap((note) =>
       createBurstParticles(note, frame, this.laneMap, this.baseHue),
     );
-    const background: BackgroundState = {
-      colorHsl: [
-        (this.baseHue + sectionEnergy * 0.04) % 1,
-        clamp(0.46 + this.averageVelocity * 0.18, 0, 1),
-        clamp(0.08 + frame.velocityEnergy * 0.08 + sectionEnergy * 0.05, 0.05, 0.26),
-      ],
-      fogStrength: clamp(0.18 + sectionEnergy * 0.52 + frame.polyphonyNormalized * 0.18, 0.1, 1),
-    };
+    const background = this.sampleBackground(frame);
 
     return {
       id: this.id,
       ambientParticles: this.context.analysis.document.notes.length > 0 ? this.ambientParticles : [],
       particles: [...noteParticles, ...burstParticles],
       background,
+    };
+  }
+
+  private sampleBackground(frame: PlaybackFrame): BackgroundState {
+    const sectionCues = this.context.analysis.sectionCues;
+    const currentSection =
+      frame.sectionCue ??
+      sectionCues.at(-1) ?? {
+        index: 0,
+        startTimeSeconds: 0,
+        endTimeSeconds: Math.max(frame.durationSeconds, 1),
+        energy: 0,
+        density: 0,
+        label: 'intro' as const,
+      };
+    const nextSection = sectionCues[currentSection.index + 1] ?? currentSection;
+    const sectionDuration = Math.max(currentSection.endTimeSeconds - currentSection.startTimeSeconds, 1e-6);
+    const sectionProgress = clamp((frame.timeSeconds - currentSection.startTimeSeconds) / sectionDuration, 0, 1);
+    const easedProgress = smoothStep(sectionProgress);
+
+    const currentHue = (this.baseHue + currentSection.energy * 0.025 + currentSection.density * 0.018) % 1;
+    const nextHue = (this.baseHue + nextSection.energy * 0.025 + nextSection.density * 0.018) % 1;
+    const currentSaturation = clamp(0.38 + this.averageVelocity * 0.12 + currentSection.density * 0.08, 0.34, 0.62);
+    const nextSaturation = clamp(0.38 + this.averageVelocity * 0.12 + nextSection.density * 0.08, 0.34, 0.62);
+    const currentLightness = clamp(0.07 + currentSection.energy * 0.045 + currentSection.density * 0.03, 0.06, 0.16);
+    const nextLightness = clamp(0.07 + nextSection.energy * 0.045 + nextSection.density * 0.03, 0.06, 0.16);
+    const currentFogStrength = clamp(0.2 + currentSection.energy * 0.42 + currentSection.density * 0.12, 0.16, 0.82);
+    const nextFogStrength = clamp(0.2 + nextSection.energy * 0.42 + nextSection.density * 0.12, 0.16, 0.82);
+
+    return {
+      colorHsl: [
+        lerpHue(currentHue, nextHue, easedProgress),
+        lerp(currentSaturation, nextSaturation, easedProgress),
+        clamp(
+          lerp(currentLightness, nextLightness, easedProgress) + frame.velocityEnergy * 0.012,
+          0.06,
+          0.18,
+        ),
+      ],
+      fogStrength: clamp(
+        lerp(currentFogStrength, nextFogStrength, easedProgress) + frame.polyphonyNormalized * 0.02,
+        0.16,
+        0.88,
+      ),
     };
   }
 }
