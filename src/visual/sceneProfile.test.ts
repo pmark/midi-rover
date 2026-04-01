@@ -5,7 +5,7 @@ import type { NormalizedMidiDocument, NoteEvent } from '../core/types.ts';
 import { createAnalysisSnapshot, createPlaceholderMidiDocument, samplePlaybackFrame } from '../analysis/playbackAnalysis.ts';
 import { createSeedConfig } from './seed.ts';
 import { createVisualSceneProfile, sampleVisualScene } from './sceneProfile.ts';
-import { TERRAIN_SEGMENTS, TERRAIN_SIZE } from './synthwaveTerrain.ts';
+import { TERRAIN_COLUMNS, TERRAIN_DEPTH, TERRAIN_ROWS } from './synthwaveTerrain.ts';
 
 const createNote = (
   id: string,
@@ -115,11 +115,11 @@ test('synthwave terrain keeps a central road valley between raised shoulders', (
   const profile = createVisualSceneProfile(analysis, createSeedConfig(documentFixture.sourceHash, 'synthwave'));
   const scene = sampleVisualScene(profile, samplePlaybackFrame(analysis, 6.2));
   const referenceSegment = scene.ground.terrainSegments[Math.floor(scene.ground.terrainSegments.length / 2)];
-  const row = Math.floor(TERRAIN_SEGMENTS * 0.18);
-  const rowWidth = TERRAIN_SEGMENTS + 1;
-  const centerHeight = referenceSegment.heights[row * rowWidth + Math.floor(TERRAIN_SEGMENTS / 2)];
-  const leftShoulderHeight = referenceSegment.heights[row * rowWidth + Math.floor(TERRAIN_SEGMENTS * 0.18)];
-  const rightShoulderHeight = referenceSegment.heights[row * rowWidth + Math.floor(TERRAIN_SEGMENTS * 0.82)];
+  const row = Math.floor(TERRAIN_ROWS * 0.18);
+  const rowWidth = TERRAIN_COLUMNS + 1;
+  const centerHeight = referenceSegment.heights[row * rowWidth + Math.floor(TERRAIN_COLUMNS / 2)];
+  const leftShoulderHeight = referenceSegment.heights[row * rowWidth + Math.floor(TERRAIN_COLUMNS * 0.18)];
+  const rightShoulderHeight = referenceSegment.heights[row * rowWidth + Math.floor(TERRAIN_COLUMNS * 0.82)];
 
   assert.ok(leftShoulderHeight > centerHeight);
   assert.ok(rightShoulderHeight > centerHeight);
@@ -146,10 +146,10 @@ test('camera always advances forward and keeps a bounded look target ahead', () 
   const laterLookAhead = Math.abs(laterScene.camera.position[2] - laterScene.camera.target[2]);
 
   assert.ok(laterScene.camera.position[2] < earlyScene.camera.position[2]);
-  assert.ok(earlyLookAhead > 20 && earlyLookAhead < 32);
+  assert.ok(earlyLookAhead > 28 && earlyLookAhead < 36);
   assert.ok(Math.abs(earlyLookAhead - laterLookAhead) < 0.001);
   assert.ok(Math.abs(earlyScene.camera.target[0]) < 1.1);
-  assert.ok(Math.abs(earlyScene.camera.target[1]) < 3.2);
+  assert.ok(earlyScene.camera.target[1] < -3 && earlyScene.camera.target[1] > -8);
 });
 
 test('terrain chunks stay fixed in world space and extend ahead of the camera', () => {
@@ -162,7 +162,21 @@ test('terrain chunks stay fixed in world space and extend ahead of the camera', 
   assert.ok(centers[0] > scene.camera.position[2]);
   assert.ok(centers.at(-1)! < scene.camera.position[2]);
   for (let index = 1; index < centers.length; index += 1) {
-    assert.equal(centers[index - 1] - centers[index], TERRAIN_SIZE);
+    assert.equal(centers[index - 1] - centers[index], TERRAIN_DEPTH);
+  }
+});
+
+test('adjacent terrain strips share the same seam heights', () => {
+  const analysis = createAnalysisSnapshot(documentFixture);
+  const profile = createVisualSceneProfile(analysis, createSeedConfig(documentFixture.sourceHash, 'balanced'));
+  const scene = sampleVisualScene(profile, samplePlaybackFrame(analysis, 6.5));
+  const [frontStrip, nextStrip] = scene.ground.terrainSegments;
+  const rowWidth = TERRAIN_COLUMNS + 1;
+
+  for (let column = 0; column <= TERRAIN_COLUMNS; column += 1) {
+    const leadingEdgeHeight = frontStrip.heights[column];
+    const trailingEdgeHeight = nextStrip.heights[TERRAIN_ROWS * rowWidth + column];
+    assert.ok(Math.abs(trailingEdgeHeight - leadingEdgeHeight) < 1e-9);
   }
 });
 

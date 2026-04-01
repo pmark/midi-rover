@@ -1,6 +1,6 @@
 import type { CameraJourneyFrame, GroundPlaneFrame, JourneyFrame, PlaybackFrame } from '../core/types.ts';
 import { createDeterministicRandom } from './seed.ts';
-import { SynthwaveTerrain, TERRAIN_SIZE } from './synthwaveTerrain.ts';
+import { SynthwaveTerrain, TERRAIN_DEPTH } from './synthwaveTerrain.ts';
 import type { VisualGroundProfile, VisualLayerContext } from './types.ts';
 
 const clamp = (value: number, min: number, max: number): number =>
@@ -35,10 +35,10 @@ export class GroundPlaneProfile implements VisualGroundProfile {
       ? clamp(1.9 + journey.energy * 4.2 + journey.dynamicContrast * 1.6, 1.8, 6.4)
       : 8.8;
     const terrainScroll = frame.timeSeconds * (0.035 + journey.travelSpeed * 0.09);
-    const containingSegmentIndex = Math.floor((camera.position[2] + TERRAIN_SIZE * 0.5) / TERRAIN_SIZE);
+    const containingSegmentIndex = Math.floor((camera.position[2] + TERRAIN_DEPTH * 0.5) / TERRAIN_DEPTH);
     const terrainSegments = Array.from({ length: TERRAIN_RING_SEGMENTS }, (_, index) => {
       const segmentIndex = containingSegmentIndex + 1 - index;
-      const centerZ = segmentIndex * TERRAIN_SIZE;
+      const centerZ = segmentIndex * TERRAIN_DEPTH;
 
       return {
         centerZ,
@@ -46,6 +46,7 @@ export class GroundPlaneProfile implements VisualGroundProfile {
           amplitude: terrainAmplitude,
           frequency: this.terrainFrequency,
           worldOffsetZ: centerZ,
+          scrollOffsetZ: terrainScroll,
           travelSpeed: journey.travelSpeed,
           complexity: journey.complexity,
         }),

@@ -4,8 +4,8 @@ import type { VisualCameraDirector, VisualLayerContext } from './types.ts';
 
 type Point3 = [x: number, y: number, z: number];
 
-const MIN_DOWNWARD_ANGLE_RADIANS = (8 * Math.PI) / 180;
-const MAX_DOWNWARD_ANGLE_RADIANS = (22 * Math.PI) / 180;
+const MIN_DOWNWARD_ANGLE_RADIANS = (14 * Math.PI) / 180;
+const MAX_DOWNWARD_ANGLE_RADIANS = (30 * Math.PI) / 180;
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
@@ -46,9 +46,9 @@ export class CameraJourneyDirector implements VisualCameraDirector {
     this.targetPhaseX = random() * Math.PI * 2;
     this.targetPhaseY = random() * Math.PI * 2;
     this.xAmplitude = 0.3 + random() * 0.45;
-    this.yBase = 2.5 + random() * 0.7;
-    this.yAmplitude = 0.18 + random() * 0.28;
-    this.lookAheadDistance = 24 + random() * 5;
+    this.yBase = 2.2 + random() * 0.55;
+    this.yAmplitude = 0.12 + random() * 0.2;
+    this.lookAheadDistance = 28 + random() * 6;
     this.forwardSpeed = 8.5 + random() * 2.8;
     this.targetRadiusX = 0.28 + random() * 0.3;
     this.targetRadiusY = 0.14 + random() * 0.18;
@@ -59,12 +59,12 @@ export class CameraJourneyDirector implements VisualCameraDirector {
       const scenicTime = frame.timeSeconds * 0.28;
       const position: Point3 = [
         Math.sin(this.lanePhaseX + scenicTime * 0.5) * 0.75,
-        7.8 + Math.sin(this.lanePhaseY + scenicTime * 0.3) * 0.28,
+        7.1 + Math.sin(this.lanePhaseY + scenicTime * 0.3) * 0.22,
         34 - scenicTime * 7.5,
       ];
       const target: Point3 = [
         Math.sin(this.targetPhaseX + scenicTime * 0.22) * 1.8,
-        0.6 + Math.sin(this.targetPhaseY + scenicTime * 0.2) * 0.35,
+        -1.2 + Math.sin(this.targetPhaseY + scenicTime * 0.2) * 0.28,
         position[2] - 78,
       ];
 
@@ -90,14 +90,14 @@ export class CameraJourneyDirector implements VisualCameraDirector {
       Math.sin(lateralPhase) * (this.xAmplitude + journey.complexity * 0.22),
       this.yBase +
         Math.sin(verticalPhase) * (this.yAmplitude + journey.travelSpeed * 0.16) +
-        (frame.velocityEnergy - 0.5) * 0.22,
+        (frame.velocityEnergy - 0.5) * 0.14,
       18 - frame.timeSeconds * speed,
     ];
 
     const unconstrainedTarget: Point3 = [
       Math.sin(targetPhaseX) * (this.targetRadiusX + frame.polyphonyNormalized * 0.12) +
         (pitchCenter - 0.5) * 0.24,
-      -2.1 + Math.sin(targetPhaseY) * (this.targetRadiusY + frame.velocityEnergy * 0.08) + (pitchCenter - 0.5) * 0.15,
+      -3.4 + Math.sin(targetPhaseY) * (this.targetRadiusY + frame.velocityEnergy * 0.06) + (pitchCenter - 0.5) * 0.12,
       position[2] - this.lookAheadDistance,
     ];
     const target = constrainTargetToGroundView(position, unconstrainedTarget);
@@ -106,7 +106,7 @@ export class CameraJourneyDirector implements VisualCameraDirector {
       position,
       target,
       rollRadians: clamp((target[0] - position[0]) * 0.018, -0.02, 0.02),
-      fieldOfViewDegrees: clamp(60 + journey.travelSpeed * 6.5 + journey.complexity * 2.5, 60, 68),
+      fieldOfViewDegrees: clamp(64 + journey.travelSpeed * 5.5 + journey.complexity * 2.2, 64, 70),
       travelSpeed: journey.travelSpeed,
       complexity: journey.complexity,
       segmentLabel: journey.segment?.label ?? 'approach',
