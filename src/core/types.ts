@@ -180,8 +180,10 @@ export interface GroundPlaneFrame {
   terrainAmplitude: number;
   terrainFrequency: number;
   terrainScroll: number;
-  terrainOriginZ: number;
-  terrainHeights: number[];
+  terrainSegments: {
+    centerZ: number;
+    heights: number[];
+  }[];
   sphereAnchorVisible: boolean;
   sphereAnchorRadius: number;
   accentColorHsl: [h: number, s: number, l: number];

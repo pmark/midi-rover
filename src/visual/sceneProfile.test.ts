@@ -5,7 +5,7 @@ import type { NormalizedMidiDocument, NoteEvent } from '../core/types.ts';
 import { createAnalysisSnapshot, createPlaceholderMidiDocument, samplePlaybackFrame } from '../analysis/playbackAnalysis.ts';
 import { createSeedConfig } from './seed.ts';
 import { createVisualSceneProfile, sampleVisualScene } from './sceneProfile.ts';
-import { TERRAIN_SEGMENTS } from './synthwaveTerrain.ts';
+import { TERRAIN_SEGMENTS, TERRAIN_SIZE } from './synthwaveTerrain.ts';
 
 const createNote = (
   id: string,
@@ -114,11 +114,12 @@ test('synthwave terrain keeps a central road valley between raised shoulders', (
   const analysis = createAnalysisSnapshot(documentFixture);
   const profile = createVisualSceneProfile(analysis, createSeedConfig(documentFixture.sourceHash, 'synthwave'));
   const scene = sampleVisualScene(profile, samplePlaybackFrame(analysis, 6.2));
+  const referenceSegment = scene.ground.terrainSegments[Math.floor(scene.ground.terrainSegments.length / 2)];
   const row = Math.floor(TERRAIN_SEGMENTS * 0.18);
   const rowWidth = TERRAIN_SEGMENTS + 1;
-  const centerHeight = scene.ground.terrainHeights[row * rowWidth + Math.floor(TERRAIN_SEGMENTS / 2)];
-  const leftShoulderHeight = scene.ground.terrainHeights[row * rowWidth + Math.floor(TERRAIN_SEGMENTS * 0.18)];
-  const rightShoulderHeight = scene.ground.terrainHeights[row * rowWidth + Math.floor(TERRAIN_SEGMENTS * 0.82)];
+  const centerHeight = referenceSegment.heights[row * rowWidth + Math.floor(TERRAIN_SEGMENTS / 2)];
+  const leftShoulderHeight = referenceSegment.heights[row * rowWidth + Math.floor(TERRAIN_SEGMENTS * 0.18)];
+  const rightShoulderHeight = referenceSegment.heights[row * rowWidth + Math.floor(TERRAIN_SEGMENTS * 0.82)];
 
   assert.ok(leftShoulderHeight > centerHeight);
   assert.ok(rightShoulderHeight > centerHeight);
@@ -151,6 +152,20 @@ test('camera always advances forward and keeps a bounded look target ahead', () 
   assert.ok(Math.abs(earlyScene.camera.target[1]) < 3.2);
 });
 
+test('terrain chunks stay fixed in world space and extend ahead of the camera', () => {
+  const analysis = createAnalysisSnapshot(documentFixture);
+  const profile = createVisualSceneProfile(analysis, createSeedConfig(documentFixture.sourceHash, 'balanced'));
+  const scene = sampleVisualScene(profile, samplePlaybackFrame(analysis, 6.5));
+  const centers = scene.ground.terrainSegments.map((segment) => segment.centerZ);
+
+  assert.equal(scene.ground.terrainSegments.length, 5);
+  assert.ok(centers[0] > scene.camera.position[2]);
+  assert.ok(centers.at(-1)! < scene.camera.position[2]);
+  for (let index = 1; index < centers.length; index += 1) {
+    assert.equal(centers[index - 1] - centers[index], TERRAIN_SIZE);
+  }
+});
+
 test('placeholder scene renders deterministically without a MIDI file', () => {
   const document = createPlaceholderMidiDocument();
   const analysis = createAnalysisSnapshot(document);
@@ -163,5 +178,8 @@ test('placeholder scene renders deterministically without a MIDI file', () => {
   assert.equal(document.notes.length, 0);
   assert.ok(sceneA.ambientParticles.length > 0);
   assert.ok(sceneA.particles.length > 0);
+  assert.ok(sceneA.ground.terrainAmplitude >= 8);
+  assert.ok(sceneA.camera.position[1] >= 7);
+  assert.ok(Math.abs(sceneA.camera.position[2] - sceneA.camera.target[2]) >= 70);
   assert.deepEqual(sceneA, sceneB);
 });

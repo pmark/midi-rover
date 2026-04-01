@@ -25,6 +25,7 @@ const constrainTargetToGroundView = (cameraPosition: Point3, target: Point3): Po
 };
 
 export class CameraJourneyDirector implements VisualCameraDirector {
+  private readonly hasMusicalNotes: boolean;
   private readonly lanePhaseX: number;
   private readonly lanePhaseY: number;
   private readonly targetPhaseX: number;
@@ -38,6 +39,7 @@ export class CameraJourneyDirector implements VisualCameraDirector {
   private readonly targetRadiusY: number;
 
   public constructor(context: VisualLayerContext) {
+    this.hasMusicalNotes = context.analysis.document.notes.length > 0;
     const random = createDeterministicRandom(context.seed.normalizedSeed ^ 0x51f15e7d);
     this.lanePhaseX = random() * Math.PI * 2;
     this.lanePhaseY = random() * Math.PI * 2;
@@ -47,13 +49,37 @@ export class CameraJourneyDirector implements VisualCameraDirector {
     this.yBase = 2.5 + random() * 0.7;
     this.yAmplitude = 0.18 + random() * 0.28;
     this.lookAheadDistance = 24 + random() * 5;
-    this.forwardSpeed = 2.8 + random() * 1.1;
+    this.forwardSpeed = 8.5 + random() * 2.8;
     this.targetRadiusX = 0.28 + random() * 0.3;
     this.targetRadiusY = 0.14 + random() * 0.18;
   }
 
   public sample(frame: PlaybackFrame, journey: JourneyFrame): CameraJourneyFrame {
-    const speed = this.forwardSpeed + journey.travelSpeed * 3.2 + journey.energy * 1.35;
+    if (!this.hasMusicalNotes) {
+      const scenicTime = frame.timeSeconds * 0.28;
+      const position: Point3 = [
+        Math.sin(this.lanePhaseX + scenicTime * 0.5) * 0.75,
+        7.8 + Math.sin(this.lanePhaseY + scenicTime * 0.3) * 0.28,
+        34 - scenicTime * 7.5,
+      ];
+      const target: Point3 = [
+        Math.sin(this.targetPhaseX + scenicTime * 0.22) * 1.8,
+        0.6 + Math.sin(this.targetPhaseY + scenicTime * 0.2) * 0.35,
+        position[2] - 78,
+      ];
+
+      return {
+        position,
+        target,
+        rollRadians: clamp((target[0] - position[0]) * 0.01, -0.01, 0.01),
+        fieldOfViewDegrees: 50,
+        travelSpeed: 0.18,
+        complexity: 0.24,
+        segmentLabel: 'approach',
+      };
+    }
+
+    const speed = this.forwardSpeed + journey.travelSpeed * 7.5 + journey.energy * 3.2;
     const lateralPhase = frame.timeSeconds * (0.42 + journey.complexity * 0.28) + this.lanePhaseX;
     const verticalPhase = frame.timeSeconds * (0.76 + journey.travelSpeed * 0.34) + this.lanePhaseY;
     const targetPhaseX = frame.timeSeconds * (0.34 + journey.travelSpeed * 0.24) + this.targetPhaseX;
@@ -80,7 +106,7 @@ export class CameraJourneyDirector implements VisualCameraDirector {
       position,
       target,
       rollRadians: clamp((target[0] - position[0]) * 0.018, -0.02, 0.02),
-      fieldOfViewDegrees: clamp(58 + journey.travelSpeed * 5 + journey.complexity * 2, 57, 65),
+      fieldOfViewDegrees: clamp(60 + journey.travelSpeed * 6.5 + journey.complexity * 2.5, 60, 68),
       travelSpeed: journey.travelSpeed,
       complexity: journey.complexity,
       segmentLabel: journey.segment?.label ?? 'approach',

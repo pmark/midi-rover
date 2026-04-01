@@ -40,19 +40,15 @@ export class SynthwaveTerrain {
   private readonly scrollScale: number;
   private readonly twistPeriod: number;
   private readonly cornerPeriod: number;
-  private readonly shoulderBias: number;
-  private readonly mountainOffset: number;
 
   public constructor(seed: number) {
     const random = createDeterministicRandom(seed ^ 0x7f4a7c15);
     this.noise2D = fbm2d(createNoise2D(random), 3);
     this.ridgeNoise2D = fbm2d(createNoise2D(random), 2);
-    this.roadWidth = 0.035 + random() * 0.035;
+    this.roadWidth = 0.24 + random() * 0.08;
     this.scrollScale = 8 + random() * 5;
     this.twistPeriod = 22 + random() * 14;
     this.cornerPeriod = 7 + random() * 5;
-    this.shoulderBias = 0.45 + random() * 0.3;
-    this.mountainOffset = 0.8 + random() * 0.7;
   }
 
   public sample(snapshot: SynthwaveTerrainSnapshot): number[] {
@@ -64,31 +60,31 @@ export class SynthwaveTerrain {
     for (let row = 0; row <= TERRAIN_SEGMENTS; row += 1) {
       const z = -TERRAIN_SIZE * 0.5 + row * step + snapshot.worldOffsetZ;
       const normalizedDepth = clamp((z + TERRAIN_SIZE * 0.5) / TERRAIN_SIZE, 0, 1);
-      const horizonMask = Math.pow(1 - normalizedDepth, 1.8 + snapshot.complexity * 0.7);
-      const hilliness = Math.abs(Math.sin((z * scaledFrequency - terrainOffset) / (3.8 - snapshot.travelSpeed * 1.4)));
+      const horizonMask = Math.pow(1 - normalizedDepth, 1.25 + snapshot.complexity * 0.35);
+      const hilliness = 0.25 + Math.abs(Math.sin((z * scaledFrequency - terrainOffset) / (7.5 - snapshot.travelSpeed * 1.2))) * 0.75;
       const roadTwist =
-        (4.5 + snapshot.complexity * 4.2) *
+        (2.4 + snapshot.complexity * 2.2) *
         Math.max(0, Math.sin((z * scaledFrequency - terrainOffset) / this.twistPeriod));
       const roadWinding = Math.sin((z * scaledFrequency - terrainOffset) / this.cornerPeriod) * roadTwist;
 
       for (let column = 0; column <= TERRAIN_SEGMENTS; column += 1) {
         const x = -TERRAIN_SIZE * 0.5 + column * step;
         const normalizedRoadX = ((x + roadWinding) / TERRAIN_SIZE) * Math.PI * 2;
-        const roadMask = Math.max(this.roadWidth - 1, -Math.cos(normalizedRoadX)) + 1;
+        const valleyMask = Math.max(this.roadWidth - 1, -Math.cos(normalizedRoadX)) + 1;
         const shoulderDistance = Math.abs(x + roadWinding) / (TERRAIN_SIZE * 0.5);
-        const foothillMask = Math.pow(clamp(shoulderDistance, 0, 1), 1.35);
+        const foothillMask = Math.pow(clamp(shoulderDistance, 0, 1), 2.4);
         const noiseX = x * scaledFrequency;
         const noiseZ = z * scaledFrequency - terrainOffset;
         const baseNoise = this.noise2D(noiseX, noiseZ);
         const ridgeNoise = 1 - Math.abs(this.ridgeNoise2D(noiseX * 0.8 + 12.5, noiseZ * 0.55 - 7.5));
-        const mountains =
-          this.mountainOffset +
-          (baseNoise * 0.55 + ridgeNoise * 0.9 + foothillMask * this.shoulderBias) *
-            (1.25 + hilliness * 1.8);
-        const mountainHeight = roadMask * mountains * snapshot.amplitude * 2.8 * horizonMask;
-        const roadCut = (1 - roadMask) * snapshot.amplitude * (0.45 + snapshot.travelSpeed * 0.25);
-        const foregroundDrop = (1 - normalizedDepth) * 0.9;
-        heights[row * (TERRAIN_SEGMENTS + 1) + column] = mountainHeight - roadCut - foregroundDrop;
+        const shoulderLift = foothillMask * (0.35 + ridgeNoise * 0.4 + baseNoise * 0.18);
+        const rollingLift = (baseNoise * 0.16 + ridgeNoise * 0.14) * hilliness;
+        const valleyFloor = (1 - valleyMask) * (0.16 + baseNoise * 0.05);
+        const terrainHeight =
+          (shoulderLift + rollingLift) * snapshot.amplitude * 1.18 * horizonMask -
+          valleyFloor * snapshot.amplitude * 0.42 -
+          (1 - normalizedDepth) * 0.45;
+        heights[row * (TERRAIN_SEGMENTS + 1) + column] = terrainHeight;
       }
     }
 

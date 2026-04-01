@@ -29,6 +29,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -54,16 +58,9 @@ button {
 }
 
 .app-shell {
-  width: min(1440px, 100%);
-  margin: 0 auto;
-  padding: 24px;
-}
-
-.lab-layout {
-  display: grid;
-  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
-  gap: 20px;
-  min-height: calc(100vh - 48px);
+  position: relative;
+  min-height: 100vh;
+  overflow: clip;
 }
 
 .control-panel,
@@ -75,11 +72,35 @@ button {
   backdrop-filter: blur(18px);
 }
 
+.visual-stage,
+.canvas-host {
+  min-height: 100vh;
+}
+
+.visual-stage {
+  position: relative;
+}
+
+.overlay-panels {
+  position: absolute;
+  inset: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  pointer-events: none;
+  z-index: 10;
+}
+
 .control-panel {
+  width: min(380px, calc(100vw - 32px));
   padding: 24px;
   display: flex;
   flex-direction: column;
   gap: 24px;
+  pointer-events: auto;
+  max-height: calc(100vh - 48px);
+  overflow: auto;
 }
 
 .eyebrow {
@@ -236,10 +257,12 @@ button {
 }
 
 .visual-panel {
-  overflow: hidden;
+  width: min(420px, calc(100vw - 32px));
   position: relative;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  pointer-events: auto;
 }
 
 .app-shell.drag-active {
@@ -250,6 +273,37 @@ button {
 .app-shell.drag-active .visual-panel {
   transform: scale(0.995);
   border-color: rgba(114, 240, 209, 0.34);
+}
+
+.panel-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.panel-tag {
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.panel-dismiss,
+.overlay-launcher {
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  padding: 9px 14px;
+  background: rgba(7, 17, 26, 0.72);
+  color: var(--text);
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.panel-dismiss:hover,
+.overlay-launcher:hover {
+  transform: translateY(-1px);
+  border-color: rgba(114, 240, 209, 0.42);
 }
 
 .visual-header {
@@ -277,8 +331,8 @@ button {
 
 .canvas-host {
   position: relative;
-  min-height: 520px;
-  flex: 1;
+  width: 100vw;
+  height: 100vh;
   background:
     radial-gradient(circle at top, rgba(95, 214, 255, 0.08), transparent 20%),
     linear-gradient(180deg, rgba(2, 10, 16, 0.4), rgba(2, 10, 16, 0.85));
@@ -296,6 +350,8 @@ button {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: min(60vw, 640px);
 }
 
 .pill {
@@ -372,18 +428,39 @@ button {
   color: var(--muted);
 }
 
+.overlay-launchers {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  display: flex;
+  gap: 10px;
+  z-index: 12;
+}
+
+.overlay-launcher[hidden] {
+  display: none;
+}
+
 @media (max-width: 1080px) {
-  .app-shell {
-    padding: 14px;
+  .overlay-panels {
+    inset: 14px;
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  .lab-layout {
-    grid-template-columns: 1fr;
-    min-height: auto;
+  .control-panel,
+  .visual-panel {
+    width: min(100%, 520px);
+    max-height: none;
   }
 
-  .canvas-host {
-    min-height: 420px;
+  .visual-panel {
+    align-self: flex-end;
+  }
+
+  .overlay-launchers {
+    top: 14px;
+    left: 14px;
   }
 }
 
@@ -397,6 +474,18 @@ button {
     padding: 18px;
   }
 
+  .overlay-panels {
+    inset: 12px;
+    gap: 12px;
+  }
+
+  .overlay-launchers {
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    flex-wrap: wrap;
+  }
+
   .transport-row,
   .metrics-grid {
     grid-template-columns: 1fr;
@@ -405,5 +494,12 @@ button {
   .visual-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .canvas-overlay {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    max-width: none;
   }
 }

@@ -192,14 +192,14 @@ export class ParticleFieldLayer implements VisualLayer {
     const sectionProgress = clamp((frame.timeSeconds - currentSection.startTimeSeconds) / sectionDuration, 0, 1);
     const easedProgress = smoothStep(sectionProgress);
 
-    const currentHue = (0.9 + currentSection.energy * 0.015 + currentSection.density * 0.01) % 1;
-    const nextHue = (0.9 + nextSection.energy * 0.015 + nextSection.density * 0.01) % 1;
-    const currentSaturation = clamp(0.74 + this.averageVelocity * 0.05 + currentSection.density * 0.05, 0.72, 0.9);
-    const nextSaturation = clamp(0.74 + this.averageVelocity * 0.05 + nextSection.density * 0.05, 0.72, 0.9);
-    const currentLightness = clamp(0.18 + currentSection.energy * 0.05 + currentSection.density * 0.02, 0.16, 0.28);
-    const nextLightness = clamp(0.18 + nextSection.energy * 0.05 + nextSection.density * 0.02, 0.16, 0.28);
-    const currentFogStrength = clamp(0.08 + currentSection.energy * 0.08 + currentSection.density * 0.04, 0.06, 0.22);
-    const nextFogStrength = clamp(0.08 + nextSection.energy * 0.08 + nextSection.density * 0.04, 0.06, 0.22);
+    const currentHue = (0.93 + currentSection.energy * 0.01 + currentSection.density * 0.006) % 1;
+    const nextHue = (0.93 + nextSection.energy * 0.01 + nextSection.density * 0.006) % 1;
+    const currentSaturation = clamp(0.62 + this.averageVelocity * 0.04 + currentSection.density * 0.03, 0.6, 0.76);
+    const nextSaturation = clamp(0.62 + this.averageVelocity * 0.04 + nextSection.density * 0.03, 0.6, 0.76);
+    const currentLightness = clamp(0.2 + currentSection.energy * 0.035 + currentSection.density * 0.015, 0.18, 0.26);
+    const nextLightness = clamp(0.2 + nextSection.energy * 0.035 + nextSection.density * 0.015, 0.18, 0.26);
+    const currentFogStrength = clamp(0.05 + currentSection.energy * 0.05 + currentSection.density * 0.02, 0.04, 0.14);
+    const nextFogStrength = clamp(0.05 + nextSection.energy * 0.05 + nextSection.density * 0.02, 0.04, 0.14);
 
     return {
       colorHsl: [
@@ -207,14 +207,14 @@ export class ParticleFieldLayer implements VisualLayer {
         lerp(currentSaturation, nextSaturation, easedProgress),
         clamp(
           lerp(currentLightness, nextLightness, easedProgress) + frame.velocityEnergy * 0.015,
-          0.16,
-          0.3,
+          0.18,
+          0.28,
         ),
       ],
       fogStrength: clamp(
         lerp(currentFogStrength, nextFogStrength, easedProgress) + frame.polyphonyNormalized * 0.01,
-        0.06,
-        0.24,
+        0.04,
+        0.16,
       ),
     };
   }

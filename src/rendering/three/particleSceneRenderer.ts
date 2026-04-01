@@ -5,7 +5,6 @@ import {
   Color,
   Float32BufferAttribute,
   FogExp2,
-  GridHelper,
   Group,
   HemisphereLight,
   InstancedMesh,
@@ -24,7 +23,6 @@ import {
   SphereGeometry,
   DirectionalLight,
   DoubleSide,
-  WireframeGeometry,
   Vector3,
   WebGLRenderer,
 } from 'three';
@@ -32,6 +30,7 @@ import type { AmbientParticle, ParticleInstance, VisualSceneFrame } from '../../
 import { TERRAIN_SEGMENTS, TERRAIN_SIZE } from '../../visual/synthwaveTerrain.ts';
 
 const MAX_DYNAMIC_PARTICLES = 1600;
+const TERRAIN_RING_SEGMENTS = 5;
 
 const tempMatrix = new Matrix4();
 const tempPosition = new Vector3();
@@ -40,9 +39,60 @@ const hslColor = new Color();
 const tempCameraPosition = new Vector3();
 const tempCameraTarget = new Vector3();
 const currentCameraTarget = new Vector3();
+const tempForward = new Vector3();
+
+interface TerrainSegmentView {
+  geometry: PlaneGeometry;
+  fill: Mesh;
+  wireGeometry: BufferGeometry;
+  wire: LineSegments;
+}
 
 const toThreeColor = (hue: number, saturation: number, lightness: number, alpha: number): Color =>
   hslColor.clone().setHSL(hue, saturation, lightness * alpha + 0.05);
+
+const createTerrainGridGeometry = (): BufferGeometry => {
+  const lineGeometry = new BufferGeometry();
+  const segmentCount = TERRAIN_SEGMENTS * (TERRAIN_SEGMENTS + 1) * 2;
+  lineGeometry.setAttribute('position', new BufferAttribute(new Float32Array(segmentCount * 2 * 3), 3));
+
+  return lineGeometry;
+};
+
+const updateTerrainGridGeometry = (surfaceGeometry: PlaneGeometry, lineGeometry: BufferGeometry): void => {
+  const surfacePositions = surfaceGeometry.attributes.position;
+  const linePositions = lineGeometry.getAttribute('position') as BufferAttribute;
+  let cursor = 0;
+
+  const writeVertex = (index: number): void => {
+    linePositions.setXYZ(
+      cursor,
+      surfacePositions.getX(index),
+      surfacePositions.getY(index),
+      surfacePositions.getZ(index) + 0.08,
+    );
+    cursor += 1;
+  };
+
+  for (let row = 0; row <= TERRAIN_SEGMENTS; row += 1) {
+    for (let column = 0; column < TERRAIN_SEGMENTS; column += 1) {
+      const startIndex = row * (TERRAIN_SEGMENTS + 1) + column;
+      writeVertex(startIndex);
+      writeVertex(startIndex + 1);
+    }
+  }
+
+  for (let column = 0; column <= TERRAIN_SEGMENTS; column += 1) {
+    for (let row = 0; row < TERRAIN_SEGMENTS; row += 1) {
+      const startIndex = row * (TERRAIN_SEGMENTS + 1) + column;
+      writeVertex(startIndex);
+      writeVertex(startIndex + TERRAIN_SEGMENTS + 1);
+    }
+  }
+
+  linePositions.needsUpdate = true;
+  lineGeometry.computeBoundingSphere();
+};
 
 export class ParticleSceneRenderer {
   private readonly scene = new Scene();
@@ -70,27 +120,35 @@ export class ParticleSceneRenderer {
   private ambientPoints = new Points(this.ambientGeometry, this.ambientMaterial);
   private ambientPositionAttribute = new BufferAttribute(new Float32Array(0), 3);
   private ambientColorAttribute = new BufferAttribute(new Float32Array(0), 3);
+  private readonly skyGroup = new Group();
   private readonly groundGroup = new Group();
-  private readonly grid = new GridHelper(TERRAIN_SIZE, 36, 0x8fd7ff, 0x315d68);
-  private readonly terrainGeometry = new PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, TERRAIN_SEGMENTS, TERRAIN_SEGMENTS);
   private readonly terrainFillMaterial = new MeshStandardMaterial({
-    color: 0x16061e,
-    emissive: 0x1a0624,
-    emissiveIntensity: 0.42,
-    roughness: 0.88,
-    metalness: 0.08,
+    color: 0x04010a,
+    emissive: 0x08010f,
+    emissiveIntensity: 0.16,
+    roughness: 0.92,
+    metalness: 0.04,
     transparent: true,
     opacity: 0.92,
     flatShading: false,
   });
-  private readonly terrainFill = new Mesh(this.terrainGeometry, this.terrainFillMaterial);
-  private terrainWireGeometry = new WireframeGeometry(this.terrainGeometry);
   private readonly terrainWireMaterial = new LineBasicMaterial({
-    color: 0x63f3ff,
+    color: 0x9f2cff,
     transparent: true,
-    opacity: 0.68,
+    opacity: 0.9,
   });
-  private readonly terrainWire = new LineSegments(this.terrainWireGeometry, this.terrainWireMaterial);
+  private readonly terrainSegments: TerrainSegmentView[] = Array.from({ length: TERRAIN_RING_SEGMENTS }, () => {
+    const geometry = new PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, TERRAIN_SEGMENTS, TERRAIN_SEGMENTS);
+    const fill = new Mesh(geometry, this.terrainFillMaterial);
+    fill.rotation.x = -Math.PI / 2;
+    fill.position.y = -5.3;
+    const wireGeometry = createTerrainGridGeometry();
+    updateTerrainGridGeometry(geometry, wireGeometry);
+    const wire = new LineSegments(wireGeometry, this.terrainWireMaterial);
+    wire.rotation.x = -Math.PI / 2;
+    wire.position.y = -5.15;
+    return { geometry, fill, wireGeometry, wire };
+  });
   private readonly skyGeometry = new PlaneGeometry(280, 120, 1, 5);
   private readonly skyMaterial = new MeshBasicMaterial({
     vertexColors: true,
@@ -100,11 +158,14 @@ export class ParticleSceneRenderer {
   });
   private readonly skyBackdrop = new Mesh(this.skyGeometry, this.skyMaterial);
   private readonly sphereAnchorGeometry = new SphereGeometry(1, 32, 24);
-  private readonly sphereAnchorMaterial = new MeshBasicMaterial({
-    color: 0x7a2d91,
+  private readonly sphereAnchorMaterial = new MeshStandardMaterial({
+    color: 0xffd47f,
+    emissive: 0xff9a3c,
+    emissiveIntensity: 1.45,
+    roughness: 0.25,
+    metalness: 0.02,
     transparent: true,
-    opacity: 0.26,
-    wireframe: true,
+    opacity: 0.9,
   });
   private readonly sphereAnchor = new Mesh(this.sphereAnchorGeometry, this.sphereAnchorMaterial);
   private readonly hemiLight = new HemisphereLight(0x6ddcff, 0x120015, 1.05);
@@ -123,31 +184,24 @@ export class ParticleSceneRenderer {
     this.scene.add(this.dynamicMesh);
     this.scene.add(this.ambientPoints);
     this.scene.add(this.groundGroup);
-    this.scene.add(this.skyBackdrop);
+    this.scene.add(this.skyGroup);
     this.scene.add(this.hemiLight);
     this.scene.add(this.sunLight);
-    this.scene.fog = new FogExp2(0x120012, 0.018);
-    this.sunLight.position.set(0, 12, -48);
+    this.scene.fog = new FogExp2(0x160915, 0.009);
+    this.sunLight.position.set(0, 20, -120);
+    this.skyGroup.add(this.skyBackdrop);
+    this.skyGroup.add(this.sphereAnchor);
 
     const skyColors = new Float32BufferAttribute(new Float32Array(this.skyGeometry.attributes.position.count * 3), 3);
     this.skyGeometry.setAttribute('color', skyColors);
     this.skyBackdrop.position.set(0, 26, -118);
 
-    this.grid.position.y = -4.4;
-    const gridMaterial = Array.isArray(this.grid.material) ? this.grid.material[0] : this.grid.material;
-    gridMaterial.transparent = true;
-    this.groundGroup.add(this.grid);
+    this.terrainSegments.forEach((segment) => {
+      this.groundGroup.add(segment.fill);
+      this.groundGroup.add(segment.wire);
+    });
 
-    this.terrainFill.rotation.x = -Math.PI / 2;
-    this.terrainFill.position.y = -5.3;
-    this.groundGroup.add(this.terrainFill);
-
-    this.terrainWire.rotation.x = -Math.PI / 2;
-    this.terrainWire.position.y = -5.15;
-    this.groundGroup.add(this.terrainWire);
-
-    this.sphereAnchor.position.set(0, -16, -64);
-    this.groundGroup.add(this.sphereAnchor);
+    this.sphereAnchor.position.set(0, 14, -156);
 
     this.camera.position.set(0, 2.5, 16);
     currentCameraTarget.set(0, 0, 0);
@@ -169,7 +223,7 @@ export class ParticleSceneRenderer {
     const fog = this.scene.fog;
     if (fog instanceof FogExp2) {
       fog.color.copy(backgroundColor);
-      fog.density = 0.024 + frame.background.fogStrength * 0.05 + frame.ground.terrainAmplitude * 0.002;
+      fog.density = 0.012 + frame.background.fogStrength * 0.03 + frame.ground.terrainAmplitude * 0.0012;
     }
 
     this.renderer.render(this.scene, this.camera);
@@ -183,10 +237,12 @@ export class ParticleSceneRenderer {
     this.ambientMaterial.dispose();
     this.skyGeometry.dispose();
     this.skyMaterial.dispose();
-    this.terrainGeometry.dispose();
     this.terrainFillMaterial.dispose();
-    this.terrainWireGeometry.dispose();
     this.terrainWireMaterial.dispose();
+    this.terrainSegments.forEach((segment) => {
+      segment.geometry.dispose();
+      segment.wireGeometry.dispose();
+    });
     this.sphereAnchorGeometry.dispose();
     this.sphereAnchorMaterial.dispose();
     this.renderer.dispose();
@@ -237,13 +293,12 @@ export class ParticleSceneRenderer {
   }
 
   private syncGround(frame: VisualSceneFrame): void {
-    const accentColor = toThreeColor(...frame.ground.accentColorHsl, 1);
-    const neonGridColor = accentColor.clone().lerp(new Color(0xcc00ff), 0.7);
+    const neonGridColor = new Color(0x8a1cff);
     const terrainFillColor = new Color(0x04010a);
-    const skyTopColor = frame.background.colorHsl ? toThreeColor(frame.background.colorHsl[0], 0.88, 0.42, 1) : new Color(0xbd158f);
-    const skyMidColor = accentColor.clone().lerp(new Color(0xff4f8b), 0.58);
-    const skyHorizonColor = new Color().setHSL(0.08, 0.95, 0.64);
-    const skyBottomColor = new Color(0x07020f);
+    const skyTopColor = new Color(0xbf1293);
+    const skyMidColor = new Color(0xeb4d86);
+    const skyHorizonColor = new Color(0xffb564);
+    const skyBottomColor = new Color(0x140611);
     const skyColors = this.skyGeometry.getAttribute('color');
     const skyPosition = this.skyGeometry.attributes.position;
     for (let index = 0; index < skyPosition.count; index += 1) {
@@ -261,43 +316,42 @@ export class ParticleSceneRenderer {
     skyColors.needsUpdate = true;
 
     this.terrainFillMaterial.color.copy(terrainFillColor);
-    this.terrainFillMaterial.emissive.copy(new Color(0x000000));
+    this.terrainFillMaterial.emissive.copy(new Color(0x090111));
     this.terrainFillMaterial.opacity = 0.98;
     this.terrainWireMaterial.color.copy(neonGridColor);
-    this.terrainWireMaterial.opacity = 0.72 + frame.ground.gridIntensity * 0.18;
-    this.hemiLight.color.copy(skyHorizonColor.clone().lerp(new Color(0xff6ea8), 0.35));
-    this.hemiLight.groundColor.copy(new Color(0x020106));
-    this.hemiLight.intensity = 0.9;
-    this.sunLight.color.copy(skyHorizonColor);
-    this.sunLight.intensity = 0.72;
+    this.terrainWireMaterial.opacity = 0.76 + frame.ground.gridIntensity * 0.18;
+    this.hemiLight.color.copy(new Color(0xffd2ac));
+    this.hemiLight.groundColor.copy(new Color(0x07090f));
+    this.hemiLight.intensity = 0.95;
+    this.sunLight.color.copy(new Color(0xffc56c));
+    this.sunLight.intensity = 1.52;
 
-    const gridMaterial = Array.isArray(this.grid.material) ? this.grid.material[0] : this.grid.material;
-    gridMaterial.opacity = 0;
-    gridMaterial.color.copy(neonGridColor);
+    this.terrainSegments.forEach((segmentView, segmentIndex) => {
+      const segmentFrame = frame.ground.terrainSegments[segmentIndex];
+      segmentView.fill.visible = segmentFrame !== undefined;
+      segmentView.wire.visible = segmentFrame !== undefined;
+      if (!segmentFrame) {
+        return;
+      }
 
-    this.grid.scale.setScalar(frame.ground.gridScale);
-    this.grid.position.z = frame.ground.terrainOriginZ;
-    this.terrainFill.position.z = frame.ground.terrainOriginZ;
-    this.terrainWire.position.z = frame.ground.terrainOriginZ;
+      segmentView.fill.position.z = segmentFrame.centerZ;
+      segmentView.wire.position.z = segmentFrame.centerZ;
 
-    const positions = this.terrainGeometry.attributes.position;
-    const heightCount = Math.min(positions.count, frame.ground.terrainHeights.length);
-    for (let index = 0; index < heightCount; index += 1) {
-      positions.setZ(index, frame.ground.terrainHeights[index]);
-    }
-    positions.needsUpdate = true;
-    this.terrainGeometry.computeVertexNormals();
-    this.terrainWireGeometry.dispose();
-    this.terrainWireGeometry = new WireframeGeometry(this.terrainGeometry);
-    this.terrainWire.geometry = this.terrainWireGeometry;
+      const positions = segmentView.geometry.attributes.position;
+      const heightCount = Math.min(positions.count, segmentFrame.heights.length);
+      for (let index = 0; index < heightCount; index += 1) {
+        positions.setZ(index, segmentFrame.heights[index]);
+      }
+      positions.needsUpdate = true;
+      segmentView.geometry.computeVertexNormals();
+      updateTerrainGridGeometry(segmentView.geometry, segmentView.wireGeometry);
+    });
 
     this.sphereAnchor.visible = frame.ground.sphereAnchorVisible;
     this.sphereAnchor.scale.setScalar(frame.ground.sphereAnchorRadius);
-    this.sphereAnchor.material.color.copy(skyHorizonColor.clone().lerp(new Color(0xff7c54), 0.45));
-    this.sphereAnchor.material.opacity = 0.08;
-    this.sphereAnchor.position.x = 0;
-    this.sphereAnchor.position.y = 4;
-    this.sphereAnchor.position.z = frame.camera.position[2] - 126;
+    this.sphereAnchor.material.color.copy(new Color(0xffd27c));
+    this.sphereAnchor.material.emissive.copy(new Color(0xff9142));
+    this.sphereAnchor.material.opacity = 0.92;
   }
 
   private syncCamera(frame: VisualSceneFrame): void {
@@ -310,6 +364,18 @@ export class ParticleSceneRenderer {
     this.camera.updateProjectionMatrix();
     this.camera.lookAt(currentCameraTarget);
     this.camera.rotation.z = MathUtils.lerp(this.camera.rotation.z, frame.camera.rollRadians, 0.08);
+
+    tempForward.subVectors(currentCameraTarget, this.camera.position);
+    tempForward.y = 0;
+    if (tempForward.lengthSq() < 0.0001) {
+      tempForward.set(0, 0, -1);
+    } else {
+      tempForward.normalize();
+    }
+
+    this.skyGroup.position.set(this.camera.position.x, 0, this.camera.position.z);
+    this.sphereAnchor.position.set(tempForward.x * 156, 14, tempForward.z * 156);
+    this.sunLight.position.set(tempForward.x * 120, 20, tempForward.z * 120);
   }
 
   private resize(): void {

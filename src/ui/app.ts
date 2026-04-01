@@ -63,8 +63,28 @@ export const mountMidiLab = (root: HTMLElement): void => {
           <p class="drop-overlay-copy">Release anywhere to parse the file, rebuild analysis, and refresh the particle scene.</p>
         </div>
       </div>
-      <div class="lab-layout">
-        <aside class="control-panel">
+      <section class="visual-stage">
+        <div class="canvas-host" data-canvas-host>
+          <div class="canvas-overlay" data-stage-overlay>
+            <div class="pill" data-overlay-seed>seed: auto</div>
+            <div class="pill" data-overlay-cue>cue: idle</div>
+            <div class="pill" data-overlay-journey>journey: approach</div>
+            <div class="pill" data-overlay-notes>notes: 0</div>
+          </div>
+        </div>
+      </section>
+
+      <div class="overlay-launchers">
+        <button type="button" class="overlay-launcher" data-show-controls hidden>Show controls</button>
+        <button type="button" class="overlay-launcher" data-show-stage hidden>Show stage info</button>
+      </div>
+
+      <div class="overlay-panels">
+        <aside class="control-panel" data-controls-panel>
+          <div class="panel-toolbar">
+            <span class="panel-tag">Controls</span>
+            <button type="button" class="panel-dismiss" data-hide-controls aria-label="Hide controls">Hide</button>
+          </div>
           <header>
             <div class="eyebrow">Milestone One</div>
             <h1 class="panel-title">MIDI signal form</h1>
@@ -133,21 +153,17 @@ export const mountMidiLab = (root: HTMLElement): void => {
           </section>
         </aside>
 
-        <section class="visual-panel">
+        <section class="visual-panel" data-stage-panel>
+          <div class="panel-toolbar">
+            <span class="panel-tag">Stage</span>
+            <button type="button" class="panel-dismiss" data-hide-stage aria-label="Hide stage info">Hide</button>
+          </div>
           <div class="visual-header">
             <div>
               <h2>Composite Particle Scene</h2>
               <p>One modular visual layer now, scene-profile composition ready for additional modes later.</p>
             </div>
             <button type="button" class="secondary-action" data-snapshot>Render current frame</button>
-          </div>
-          <div class="canvas-host" data-canvas-host>
-            <div class="canvas-overlay">
-              <div class="pill" data-overlay-seed>seed: auto</div>
-              <div class="pill" data-overlay-cue>cue: idle</div>
-              <div class="pill" data-overlay-journey>journey: approach</div>
-              <div class="pill" data-overlay-notes>notes: 0</div>
-            </div>
           </div>
         </section>
       </div>
@@ -157,6 +173,12 @@ export const mountMidiLab = (root: HTMLElement): void => {
   const fileInput = root.querySelector<HTMLInputElement>('[data-file-input]');
   const appShell = root.querySelector<HTMLElement>('.app-shell');
   const dropOverlay = root.querySelector<HTMLElement>('[data-drop-overlay]');
+  const controlsPanel = root.querySelector<HTMLElement>('[data-controls-panel]');
+  const stagePanel = root.querySelector<HTMLElement>('[data-stage-panel]');
+  const showControlsButton = root.querySelector<HTMLButtonElement>('[data-show-controls]');
+  const showStageButton = root.querySelector<HTMLButtonElement>('[data-show-stage]');
+  const hideControlsButton = root.querySelector<HTMLButtonElement>('[data-hide-controls]');
+  const hideStageButton = root.querySelector<HTMLButtonElement>('[data-hide-stage]');
   const seedInput = root.querySelector<HTMLInputElement>('[data-seed-input]');
   const playButton = root.querySelector<HTMLButtonElement>('[data-play]');
   const pauseButton = root.querySelector<HTMLButtonElement>('[data-pause]');
@@ -194,6 +216,12 @@ export const mountMidiLab = (root: HTMLElement): void => {
     !fileInput ||
     !appShell ||
     !dropOverlay ||
+    !controlsPanel ||
+    !stagePanel ||
+    !showControlsButton ||
+    !showStageButton ||
+    !hideControlsButton ||
+    !hideStageButton ||
     !seedInput ||
     !playButton ||
     !pauseButton ||
@@ -233,6 +261,8 @@ export const mountMidiLab = (root: HTMLElement): void => {
   let loadedState: LoadedState | null = null;
   let unsubscribeTransport: (() => void) | null = null;
   let dragDepth = 0;
+  let controlsVisible = true;
+  let stageVisible = true;
 
   volumeInput.value = audioController.getState().volume.toFixed(2);
   volumeReadout.textContent = `${Math.round(audioController.getState().volume * 100)}%`;
@@ -244,6 +274,13 @@ export const mountMidiLab = (root: HTMLElement): void => {
     appShell.classList.toggle('drag-active', visible);
     dropOverlay.classList.toggle('visible', visible);
     dropOverlay.setAttribute('aria-hidden', visible ? 'false' : 'true');
+  };
+
+  const syncOverlayVisibility = (): void => {
+    controlsPanel.hidden = !controlsVisible;
+    stagePanel.hidden = !stageVisible;
+    showControlsButton.hidden = controlsVisible;
+    showStageButton.hidden = stageVisible;
   };
 
   const extractMidiFile = (dataTransfer: DataTransfer | null): File | null => {
@@ -514,6 +551,26 @@ export const mountMidiLab = (root: HTMLElement): void => {
     audioController.setVolume(Number(volumeInput.value));
   });
 
+  hideControlsButton.addEventListener('click', () => {
+    controlsVisible = false;
+    syncOverlayVisibility();
+  });
+
+  showControlsButton.addEventListener('click', () => {
+    controlsVisible = true;
+    syncOverlayVisibility();
+  });
+
+  hideStageButton.addEventListener('click', () => {
+    stageVisible = false;
+    syncOverlayVisibility();
+  });
+
+  showStageButton.addEventListener('click', () => {
+    stageVisible = true;
+    syncOverlayVisibility();
+  });
+
   snapshotButton.addEventListener('click', () => {
     if (!loadedState) {
       return;
@@ -522,6 +579,7 @@ export const mountMidiLab = (root: HTMLElement): void => {
     renderFrame(loadedState, loadedState.transport.getState());
   });
 
+  syncOverlayVisibility();
   loadDefaultScene();
 
   void (async () => {
